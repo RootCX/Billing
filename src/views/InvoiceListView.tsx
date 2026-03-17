@@ -1,86 +1,163 @@
-import { useAppCollection } from "@rootcx/sdk";
+import { useState, useMemo } from "react";
+import { useAppCollection, type WhereClause } from "@rootcx/sdk";
 import {
-  PageHeader, DataTable, StatusBadge, EmptyState, Button,
-  Badge,
+  PageHeader, DataTable, EmptyState, Button, Badge, type SortingState,
 } from "@rootcx/ui";
 import { IconPlus, IconFileInvoice } from "@tabler/icons-react";
-import type { ColumnDef } from "@tanstack/react-table";
-import type { Invoice } from "../types";
+import type { Invoice, InvoiceStatus, VatTreatment } from "../types";
 import { formatCurrency, formatDate } from "../types";
+import {
+  FilterBar, conditionToWhereClause,
+  type Condition, type FieldDef,
+} from "../components/FilterSystem";
 
-const APP_ID = "billing";
+const APP_ID   = "billing";
+const PAGE_SIZE = 20;
 
-const STATUS_LABEL: Record<string, string> = {
-  draft: "Draft",
-  sent: "Sent",
-  paid: "Paid",
-  overdue: "Overdue",
-  cancelled: "Cancelled",
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+const STATUSES: { value: InvoiceStatus; label: string; color: string }[] = [
+  { value: "draft",     label: "Draft",     color: "bg-zinc-400"    },
+  { value: "sent",      label: "Sent",      color: "bg-blue-500"    },
+  { value: "paid",      label: "Paid",      color: "bg-emerald-500" },
+  { value: "overdue",   label: "Overdue",   color: "bg-red-500"     },
+  { value: "cancelled", label: "Cancelled", color: "bg-zinc-300"    },
+];
+
+const VAT_OPTIONS: { value: VatTreatment; label: string }[] = [
+  { value: "standard",       label: "Standard"       },
+  { value: "exempt",         label: "Exempt"         },
+  { value: "reverse_charge", label: "Reverse Charge" },
+  { value: "intra_eu",       label: "Intra-EU"       },
+  { value: "export",         label: "Export"         },
+];
+
+const CURRENCIES = ["EUR", "USD", "GBP", "CHF", "CAD", "AUD", "JPY"];
+
+const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+  draft: "secondary", sent: "default", paid: "outline",
+  overdue: "destructive", cancelled: "secondary",
 };
 
-const STATUS_COLOR: Record<string, string> = {
-  draft: "secondary",
-  sent: "default",
-  paid: "outline",
-  overdue: "destructive",
-  cancelled: "secondary",
-};
+// ─── Field definitions ────────────────────────────────────────────────────────
+
+const FIELD_DEFS: FieldDef[] = [
+  { key: "status",         label: "Status",         type: "enum",   options: STATUSES.map(s => ({ value: s.value, label: s.label, color: s.color })) },
+  { key: "currency",       label: "Currency",       type: "enum",   options: CURRENCIES.map(c => ({ value: c, label: c })) },
+  { key: "vat_treatment",  label: "VAT Treatment",  type: "enum",   options: VAT_OPTIONS.map(v => ({ value: v.value, label: v.label })) },
+  { key: "invoice_number", label: "Invoice #",      type: "text"  },
+  { key: "client_company", label: "Client",         type: "text"  },
+  { key: "client_country", label: "Client Country", type: "text"  },
+  { key: "client_city",    label: "Client City",    type: "text"  },
+  { key: "client_vat",     label: "Client VAT",     type: "text"  },
+  { key: "internal_notes", label: "Internal Notes", type: "text"  },
+  { key: "invoice_date",   label: "Invoice Date",   type: "date"  },
+  { key: "due_date",       label: "Due Date",       type: "date"  },
+  { key: "total",          label: "Total",          type: "number"},
+  { key: "subtotal",       label: "Subtotal",       type: "number"},
+];
+
+// ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
   onOpenInvoice: (id: string) => void;
-  onNewInvoice: () => void;
+  onNewInvoice:  () => void;
 }
 
-export default function InvoiceListView({ onOpenInvoice, onNewInvoice }: Props) {
-  const { data: invoices, loading, error } = useAppCollection<Invoice>(APP_ID, "invoice");
+// ─── Component ────────────────────────────────────────────────────────────────
 
-  const columns: ColumnDef<Invoice, unknown>[] = [
+export default function InvoiceListView({ onOpenInvoice, onNewInvoice }: Props) {
+  const [conditions, setConditions] = useState<Condition[]>([]);
+  const [search, setSearch]         = useState("");
+  const [pageIndex, setPageIndex]   = useState(0);
+  const [orderBy, setOrderBy]       = useState("invoice_date");
+  const [order, setOrder]           = useState<"asc" | "desc">("desc");
+
+  // ── Where clause ──────────────────────────────────────────────────────────
+  const where = useMemo<WhereClause | undefined>(() => {
+    const clauses: WhereClause[] = [];
+
+    if (search) {
+      clauses.push({
+        $or: [
+          { invoice_number:       { $ilike: `%${search}%` } },
+          { client_company:       { $ilike: `%${search}%` } },
+          { client_contact_name:  { $ilike: `%${search}%` } },
+          { client_contact_email: { $ilike: `%${search}%` } },
+        ],
+      });
+    }
+
+    for (const cond of conditions) {
+      const clause = conditionToWhereClause(cond, FIELD_DEFS);
+      if (clause) clauses.push(clause);
+    }
+
+    return clauses.length === 0 ? undefined :
+           clauses.length === 1 ? clauses[0] :
+           { $and: clauses };
+  }, [search, conditions]);
+
+  const { data: invoices, total, loading } = useAppCollection<Invoice>(APP_ID, "invoice", {
+    where, orderBy, order, limit: PAGE_SIZE, offset: pageIndex * PAGE_SIZE,
+  });
+
+  const hasAny = conditions.length > 0 || !!search;
+
+  // ── Columns ────────────────────────────────────────────────────────────────
+  const columns = [
     {
-      accessorKey: "invoice_number",
-      header: "Invoice #",
-      cell: ({ row }) => (
+      accessorKey: "invoice_number", header: "Invoice #",
+      cell: ({ row }: { row: { original: Invoice } }) => (
         <span className="font-mono text-sm font-medium">{row.original.invoice_number}</span>
       ),
     },
     {
-      accessorKey: "client_company",
-      header: "Client",
-      cell: ({ row }) => (
-        <span className="font-medium">{row.original.client_company || <span className="text-muted-foreground italic">No client</span>}</span>
+      accessorKey: "client_company", header: "Client",
+      cell: ({ row }: { row: { original: Invoice } }) => (
+        <div>
+          <p className="font-medium leading-none">
+            {row.original.client_company || <span className="text-muted-foreground italic">—</span>}
+          </p>
+          {row.original.client_contact_email && (
+            <p className="text-xs text-muted-foreground mt-0.5">{row.original.client_contact_email}</p>
+          )}
+        </div>
       ),
     },
     {
-      accessorKey: "invoice_date",
-      header: "Invoice Date",
-      cell: ({ row }) => <span className="text-sm">{formatDate(row.original.invoice_date)}</span>,
+      accessorKey: "invoice_date", header: "Invoice Date",
+      cell: ({ row }: { row: { original: Invoice } }) => (
+        <span className="text-sm text-muted-foreground">{formatDate(row.original.invoice_date)}</span>
+      ),
     },
     {
-      accessorKey: "due_date",
-      header: "Due Date",
-      cell: ({ row }) => <span className="text-sm">{formatDate(row.original.due_date)}</span>,
+      accessorKey: "due_date", header: "Due Date",
+      cell: ({ row }: { row: { original: Invoice } }) => (
+        <span className="text-sm text-muted-foreground">{formatDate(row.original.due_date)}</span>
+      ),
     },
     {
-      accessorKey: "total",
-      header: "Total",
-      cell: ({ row }) => (
-        <span className="font-semibold tabular-nums">
-          {formatCurrency(row.original.total || 0, row.original.currency || "EUR")}
+      accessorKey: "total", header: "Total",
+      cell: ({ row }: { row: { original: Invoice } }) => (
+        <span className="font-semibold tabular-nums text-sm">
+          {formatCurrency(row.original.total ?? 0, row.original.currency ?? "EUR")}
         </span>
       ),
     },
     {
-      accessorKey: "status",
-      header: "Status",
-      cell: ({ row }) => (
-        <Badge variant={STATUS_COLOR[row.original.status] as any}>
-          {STATUS_LABEL[row.original.status] || row.original.status}
+      accessorKey: "status", header: "Status",
+      cell: ({ row }: { row: { original: Invoice } }) => (
+        <Badge variant={STATUS_VARIANT[row.original.status] ?? "secondary"}>
+          {STATUSES.find(s => s.value === row.original.status)?.label ?? row.original.status}
         </Badge>
       ),
     },
   ];
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="p-6 space-y-6">
+    <div className="flex flex-col flex-1 p-6 gap-5 min-h-0 overflow-hidden">
       <PageHeader
         title="Invoices"
         description="Manage your invoices and track payments"
@@ -92,25 +169,44 @@ export default function InvoiceListView({ onOpenInvoice, onNewInvoice }: Props) 
         }
       />
 
+      <FilterBar
+        fieldDefs={FIELD_DEFS}
+        conditions={conditions}
+        search={search}
+        onSearch={(v) => { setSearch(v); setPageIndex(0); }}
+        onAdd={(cond) => { setConditions(prev => [...prev, cond]); setPageIndex(0); }}
+        onUpdate={(id, patch) => { setConditions(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c)); setPageIndex(0); }}
+        onRemove={(id) => { setConditions(prev => prev.filter(c => c.id !== id)); setPageIndex(0); }}
+        onClearAll={() => { setSearch(""); setConditions([]); setPageIndex(0); }}
+        searchPlaceholder="Search invoices…"
+        totalLabel={!loading ? (total === 0 ? "No invoices found" : `${total} invoice${total !== 1 ? "s" : ""}${hasAny ? " matching filters" : ""}`) : undefined}
+      />
+
       <DataTable
+        className="flex-1 min-h-0"
         data={invoices ?? []}
         columns={columns}
         loading={loading}
-        searchable
-        pagination
-        pageSize={20}
+        pageSize={PAGE_SIZE}
+        rowCount={total}
+        onPaginationChange={({ pageIndex: pi }) => setPageIndex(pi)}
+        onSortingChange={(s: SortingState) => {
+          if (s[0]) { setOrderBy(s[0].id); setOrder(s[0].desc ? "desc" : "asc"); }
+          else      { setOrderBy("invoice_date"); setOrder("desc"); }
+          setPageIndex(0);
+        }}
         onRowClick={(row) => onOpenInvoice(row.id)}
         emptyState={
           <EmptyState
             icon={<IconFileInvoice className="h-10 w-10 text-muted-foreground" />}
-            title="No invoices yet"
-            description="Create your first invoice to get started"
-            action={
+            title={hasAny ? "No matching invoices" : "No invoices yet"}
+            description={hasAny ? "Try adjusting your search or filters" : "Create your first invoice to get started"}
+            action={!hasAny ? (
               <Button onClick={onNewInvoice}>
                 <IconPlus className="h-4 w-4 mr-2" />
                 New Invoice
               </Button>
-            }
+            ) : undefined}
           />
         }
       />
