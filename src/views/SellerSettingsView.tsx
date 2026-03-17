@@ -1,49 +1,69 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAppCollection } from "@rootcx/sdk";
-import {
-  PageHeader, Button, Input, Label, Separator, toast, LoadingState,
-} from "@rootcx/ui";
-import { IconDeviceFloppy } from "@tabler/icons-react";
+import { PageHeader, Button, Input, Label, Separator, toast, LoadingState } from "@rootcx/ui";
+import { IconDeviceFloppy, IconUpload, IconX } from "@tabler/icons-react";
+import { cn } from "@/lib/utils";
 import type { SellerSettings } from "../types";
 
 const APP_ID = "billing";
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">{label}</Label>
-      {children}
-    </div>
-  );
-}
+const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div className="space-y-1.5">
+    <Label className="text-sm font-medium">{label}</Label>
+    {children}
+  </div>
+);
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-4">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</p>
-      {children}
-    </div>
-  );
-}
+const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+  <div className="space-y-4">
+    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</p>
+    {children}
+  </div>
+);
+
+const fileToDataUrl = (file: File): Promise<string> =>
+  new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = (e) => res(e.target!.result as string);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
 
 export default function SellerSettingsView() {
   const { data, loading, create, update } = useAppCollection<SellerSettings>(APP_ID, "seller_settings");
   const [form, setForm] = useState<Partial<SellerSettings>>({});
   const [saving, setSaving] = useState(false);
-  const [initialized, setInitialized] = useState(false);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (data && !initialized) {
-      setForm(data[0] ?? {});
-      setInitialized(true);
-    }
-  }, [data, initialized]);
+    if (loading) return;
+    const record = data?.[0] ?? {};
+    setForm(record);
+    setLogoPreview(record.logo ?? null);
+  }, [loading]);
 
   const patch = (p: Partial<SellerSettings>) => setForm((f) => ({ ...f, ...p }));
+
+  const handleLogoFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) return toast.error("Please upload an image file");
+    setLogoFile(file);
+    setLogoPreview(await fileToDataUrl(file));
+  };
+
+  const handleLogoRemove = () => {
+    setLogoFile(null);
+    setLogoPreview(null);
+    patch({ logo: "" });
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   const handleSave = async () => {
     setSaving(true);
     try {
+      const logo = logoFile ? await fileToDataUrl(logoFile) : (form.logo ?? "");
       const payload = {
         company_name: form.company_name ?? "",
         vat_number: form.vat_number ?? "",
@@ -55,16 +75,13 @@ export default function SellerSettingsView() {
         phone: form.phone ?? "",
         iban: form.iban ?? "",
         bic: form.bic ?? "",
-        logo_url: form.logo_url ?? "",
+        logo,
         default_currency: form.default_currency ?? "EUR",
         default_vat_rate: form.default_vat_rate ?? 0,
         invoice_prefix: form.invoice_prefix ?? "INV",
       };
-      if (data?.[0]?.id) {
-        await update(data[0].id, payload);
-      } else {
-        await create(payload);
-      }
+      data?.[0]?.id ? await update(data[0].id, payload) : await create(payload);
+      setLogoFile(null);
       toast.success("Seller settings saved");
     } catch (e: any) {
       toast.error("Failed to save: " + e.message);
@@ -98,8 +115,41 @@ export default function SellerSettingsView() {
               <Input value={form.vat_number ?? ""} onChange={(e) => patch({ vat_number: e.target.value })} placeholder="BE0123456789" />
             </Field>
           </div>
-          <Field label="Logo URL">
-            <Input value={form.logo_url ?? ""} onChange={(e) => patch({ logo_url: e.target.value })} placeholder="https://…" />
+          <Field label="Logo">
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoFile(f); }} />
+            {logoPreview ? (
+              <div className="flex items-center gap-3">
+                <div className="h-16 w-32 rounded-md border bg-muted/30 overflow-hidden flex items-center justify-center">
+                  <img src={logoPreview} alt="Logo" className="h-full w-full object-contain p-1" />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                    <IconUpload className="h-3.5 w-3.5 mr-1.5" />Replace
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={handleLogoRemove}>
+                    <IconX className="h-3.5 w-3.5 mr-1.5" />Remove
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div
+                role="button" tabIndex={0}
+                onClick={() => fileInputRef.current?.click()}
+                onKeyDown={(e) => e.key === "Enter" && fileInputRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) handleLogoFile(f); }}
+                className={cn(
+                  "flex flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed px-6 py-5 cursor-pointer transition-colors",
+                  dragOver ? "border-primary bg-primary/5" : "border-muted-foreground/25 hover:border-muted-foreground/50 hover:bg-muted/30"
+                )}
+              >
+                <IconUpload className="h-6 w-6 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground"><span className="font-medium text-foreground">Click to upload</span> or drag & drop</p>
+                <p className="text-xs text-muted-foreground">PNG, JPG, SVG, WebP</p>
+              </div>
+            )}
           </Field>
         </Section>
 

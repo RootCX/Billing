@@ -50,30 +50,30 @@ export default function InvoicePreview({ invoice }: Props) {
       {/* Paper */}
       <div className="bg-white shadow-md rounded-lg overflow-hidden print:shadow-none" style={{ fontFamily: "'Inter', sans-serif" }}>
         {/* Header band */}
-        <div className="bg-slate-900 px-10 py-8 text-white">
+        <div className="bg-white border-b border-slate-200 px-10 py-8">
           <div className="flex items-start justify-between">
             {/* Seller info */}
             <div>
-              {seller?.logo_url && (
-                <img src={seller.logo_url} alt="Logo" className="h-10 mb-3 object-contain" />
+              {seller?.logo && (
+                <img src={seller.logo} alt="Logo" className="h-10 mb-3 object-contain" />
               )}
-              <p className="text-xl font-bold tracking-tight">{seller?.company_name || "Your Company"}</p>
+              <p className="text-xl font-bold tracking-tight text-slate-900">{seller?.company_name || "Your Company"}</p>
               {seller?.vat_number && (
-                <p className="text-slate-400 text-xs mt-0.5">VAT: {seller.vat_number}</p>
+                <p className="text-slate-500 text-xs mt-0.5">VAT: {seller.vat_number}</p>
               )}
               {seller?.street && (
-                <p className="text-slate-300 text-xs mt-1">
+                <p className="text-slate-500 text-xs mt-1">
                   {seller.street}{seller.city ? `, ${seller.city}` : ""}{seller.postal_code ? ` ${seller.postal_code}` : ""}
                   {seller.country_code ? `, ${seller.country_code}` : ""}
                 </p>
               )}
-              {seller?.email && <p className="text-slate-400 text-xs mt-0.5">{seller.email}</p>}
+              {seller?.email && <p className="text-slate-500 text-xs mt-0.5">{seller.email}</p>}
             </div>
 
             {/* Invoice identity */}
             <div className="text-right">
-              <p className="text-2xl font-black tracking-tight mb-1">INVOICE</p>
-              <p className="font-mono text-slate-300 text-sm">{invoice.invoice_number || "INV-XXXXXX"}</p>
+              <p className="text-2xl font-black tracking-tight mb-1 text-slate-900">INVOICE</p>
+              <p className="font-mono text-slate-500 text-sm">{invoice.invoice_number || "INV-XXXXXX"}</p>
               <span className={cn("inline-block mt-2 px-2.5 py-0.5 rounded-full text-xs font-bold", statusStyle.bg, statusStyle.text)}>
                 {statusStyle.label}
               </span>
