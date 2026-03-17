@@ -1,0 +1,167 @@
+export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "cancelled";
+export type VatTreatment = "standard" | "exempt" | "reverse_charge" | "intra_eu" | "export";
+export type ReferenceType = "purchase_order" | "contract_number" | "cost_center" | "project_reference" | "custom";
+
+export interface Customer {
+  id: string;
+  company_name: string;
+  vat_number: string;
+  street: string;
+  city: string;
+  postal_code: string;
+  country_code: string;
+  contact_name: string;
+  contact_email: string;
+  phone: string;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LineItem {
+  id: string;
+  product: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  unit_price: number;
+  discount: number;
+  tax_rate: number;
+}
+
+export interface InvoiceReference {
+  id: string;
+  type: ReferenceType;
+  label: string;
+  value: string;
+}
+
+export interface Invoice {
+  id: string;
+  invoice_number: string;
+  status: InvoiceStatus;
+  invoice_date: string;
+  due_date: string;
+  currency: string;
+  vat_treatment: VatTreatment;
+  client_company: string;
+  client_vat: string;
+  client_street: string;
+  client_city: string;
+  client_postal: string;
+  client_country: string;
+  client_contact_name: string;
+  client_contact_email: string;
+  line_items: LineItem[];
+  references: InvoiceReference[];
+  internal_notes: string;
+  terms: string;
+  subtotal: number;
+  total_tax: number;
+  total: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SellerSettings {
+  id: string;
+  company_name: string;
+  vat_number: string;
+  street: string;
+  city: string;
+  postal_code: string;
+  country_code: string;
+  email: string;
+  phone: string;
+  iban: string;
+  bic: string;
+  logo_url: string;
+  default_currency: string;
+  default_vat_rate: number;
+  invoice_prefix: string;
+}
+
+export function applyCustomerToDraft(c: Customer): Partial<Invoice> {
+  return {
+    client_company: c.company_name,
+    client_vat: c.vat_number ?? "",
+    client_street: c.street ?? "",
+    client_city: c.city ?? "",
+    client_postal: c.postal_code ?? "",
+    client_country: c.country_code ?? "",
+    client_contact_name: c.contact_name ?? "",
+    client_contact_email: c.contact_email ?? "",
+  };
+}
+
+export const CUSTOMER_FORM_FIELDS = [
+  { name: "company_name", label: "Company Name", type: "text" as const, required: true },
+  { name: "vat_number",   label: "VAT Number",   type: "text" as const },
+  { name: "street",       label: "Street",       type: "text" as const },
+  { name: "city",         label: "City",         type: "text" as const },
+  { name: "postal_code",  label: "Postal Code",  type: "text" as const },
+  { name: "country_code", label: "Country Code", type: "text" as const },
+  { name: "contact_name", label: "Contact Name", type: "text" as const },
+  { name: "contact_email",label: "Contact Email",type: "text" as const },
+  { name: "phone",        label: "Phone",        type: "text" as const },
+  { name: "notes",        label: "Notes",        type: "textarea" as const },
+];
+
+export function computeLineItem(item: LineItem) {
+  const gross = item.quantity * item.unit_price;
+  const discounted = gross * (1 - item.discount / 100);
+  const tax = discounted * (item.tax_rate / 100);
+  return { subtotal: discounted, tax, total: discounted + tax };
+}
+
+export function computeTotals(items: LineItem[]) {
+  let subtotal = 0;
+  let totalTax = 0;
+  for (const item of items) {
+    const { subtotal: s, tax: t } = computeLineItem(item);
+    subtotal += s;
+    totalTax += t;
+  }
+  return { subtotal, totalTax, total: subtotal + totalTax };
+}
+
+export function formatCurrency(amount: number, currency: string) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currency || "EUR",
+    minimumFractionDigits: 2,
+  }).format(amount);
+}
+
+export function formatDate(dateStr: string) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+}
+
+export const REFERENCE_TYPE_LABELS: Record<ReferenceType, string> = {
+  purchase_order: "Purchase Order",
+  contract_number: "Contract Number",
+  cost_center: "Cost Center",
+  project_reference: "Project Reference",
+  custom: "Custom Field",
+};
+
+export function generateInvoiceNumber(prefix: string = "INV") {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  const rand = String(Math.floor(Math.random() * 9999) + 1).padStart(4, "0");
+  return `${prefix}-${y}${m}${d}-${rand}`;
+}
+
+export function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split("T")[0];
+}
+
+export function todayISO(): string {
+  return new Date().toISOString().split("T")[0];
+}

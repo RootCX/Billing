@@ -1,0 +1,80 @@
+{
+  "appId": "billing",
+  "name": "Billing",
+  "version": "0.0.1",
+  "description": "Professional invoicing and billing management",
+  "dataContract": [
+    {
+      "entityName": "customer",
+      "fields": [
+        { "name": "company_name", "type": "text", "required": true },
+        { "name": "vat_number", "type": "text" },
+        { "name": "street", "type": "text" },
+        { "name": "city", "type": "text" },
+        { "name": "postal_code", "type": "text" },
+        { "name": "country_code", "type": "text" },
+        { "name": "contact_name", "type": "text" },
+        { "name": "contact_email", "type": "text" },
+        { "name": "phone", "type": "text" },
+        { "name": "notes", "type": "text" }
+      ]
+    },
+    {
+      "entityName": "invoice",
+      "fields": [
+        { "name": "invoice_number", "type": "text", "required": true },
+        { "name": "status", "type": "text", "enum_values": ["draft", "sent", "paid", "overdue", "cancelled"], "required": true },
+        { "name": "invoice_date", "type": "date", "required": true },
+        { "name": "due_date", "type": "date", "required": true },
+        { "name": "currency", "type": "text", "required": true },
+        { "name": "vat_treatment", "type": "text", "enum_values": ["standard", "exempt", "reverse_charge", "intra_eu", "export"] },
+        { "name": "client_company", "type": "text" },
+        { "name": "client_vat", "type": "text" },
+        { "name": "client_street", "type": "text" },
+        { "name": "client_city", "type": "text" },
+        { "name": "client_postal", "type": "text" },
+        { "name": "client_country", "type": "text" },
+        { "name": "client_contact_name", "type": "text" },
+        { "name": "client_contact_email", "type": "text" },
+        { "name": "line_items", "type": "json" },
+        { "name": "references", "type": "json" },
+        { "name": "internal_notes", "type": "text" },
+        { "name": "terms", "type": "text" },
+        { "name": "subtotal", "type": "number" },
+        { "name": "total_tax", "type": "number" },
+        { "name": "total", "type": "number" }
+      ]
+    },
+    {
+      "entityName": "seller_settings",
+      "fields": [
+        { "name": "company_name", "type": "text", "required": true },
+        { "name": "vat_number", "type": "text" },
+        { "name": "street", "type": "text" },
+        { "name": "city", "type": "text" },
+        { "name": "postal_code", "type": "text" },
+        { "name": "country_code", "type": "text" },
+        { "name": "email", "type": "text" },
+        { "name": "phone", "type": "text" },
+        { "name": "iban", "type": "text" },
+        { "name": "bic", "type": "text" },
+        { "name": "logo_url", "type": "text" },
+        { "name": "default_currency", "type": "text" },
+        { "name": "default_vat_rate", "type": "number" },
+        { "name": "invoice_prefix", "type": "text" }
+      ]
+    }
+  ],
+  "permissions": {
+    "permissions": [
+      { "key": "customer.read", "description": "View customers" },
+      { "key": "customer.write", "description": "Create and edit customers" },
+      { "key": "customer.delete", "description": "Delete customers" },
+      { "key": "invoice.read", "description": "View invoices" },
+      { "key": "invoice.write", "description": "Create and edit invoices" },
+      { "key": "invoice.delete", "description": "Delete invoices" },
+      { "key": "seller_settings.read", "description": "View seller settings" },
+      { "key": "seller_settings.write", "description": "Edit seller settings" }
+    ]
+  }
+}
