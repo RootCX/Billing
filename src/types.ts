@@ -111,6 +111,17 @@ export interface SellerSettings {
   invoice_prefix: string;
 }
 
+export interface OutgoingStatus {
+  id: string;
+  document_ulid: string;
+  status: string;
+  as4_message_id: string;
+  error_message: string;
+  delivered_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface IncomingDocument {
   id: string;
   document_ulid: string;
