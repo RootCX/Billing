@@ -75,7 +75,7 @@ export interface SellerSettings {
   phone: string;
   iban: string;
   bic: string;
-  logo_url: string;
+  logo: string;
   default_currency: string;
   default_vat_rate: number;
   invoice_prefix: string;

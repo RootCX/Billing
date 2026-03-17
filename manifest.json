@@ -58,7 +58,7 @@
         { "name": "phone", "type": "text" },
         { "name": "iban", "type": "text" },
         { "name": "bic", "type": "text" },
-        { "name": "logo_url", "type": "text" },
+        { "name": "logo", "type": "text" },
         { "name": "default_currency", "type": "text" },
         { "name": "default_vat_rate", "type": "number" },
         { "name": "invoice_prefix", "type": "text" }
