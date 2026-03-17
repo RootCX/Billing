@@ -2,10 +2,10 @@ import { useState } from "react";
 import { AuthGate } from "@rootcx/sdk";
 import {
   AppShell, AppShellSidebar, AppShellMain,
-  Sidebar, SidebarItem,
+  Sidebar, SidebarItem, SidebarSection,
   Toaster,
 } from "@rootcx/ui";
-import { IconFileInvoice, IconSettings, IconLogout, IconUsers, IconNetwork, IconInbox } from "@tabler/icons-react";
+import { IconFileInvoice, IconSettings, IconLogout, IconUsers, IconInbox, IconSend } from "@tabler/icons-react";
 import { Button } from "@rootcx/ui";
 import InvoiceListView from "./views/InvoiceListView";
 import InvoiceDetailView from "./views/InvoiceDetailView";
@@ -41,11 +41,19 @@ export default function App() {
                 </div>
               }
               footer={
-                <div className="flex items-center justify-between">
-                  <span className="truncate text-sm text-muted-foreground">{user.username}</span>
-                  <Button variant="ghost" size="icon" onClick={() => logout()}>
-                    <IconLogout className="h-4 w-4" />
-                  </Button>
+                <div className="flex flex-col gap-2">
+                  <SidebarItem
+                    icon={<IconSettings className="h-4 w-4" />}
+                    label="Seller Settings"
+                    active={view.type === "settings"}
+                    onClick={() => setView({ type: "settings" })}
+                  />
+                  <div className="flex items-center justify-between">
+                    <span className="truncate text-sm text-muted-foreground">{user.username}</span>
+                    <Button variant="ghost" size="icon" onClick={() => logout()}>
+                      <IconLogout className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               }
             >
@@ -61,24 +69,21 @@ export default function App() {
                 active={view.type === "customers"}
                 onClick={() => setView({ type: "customers" })}
               />
-              <SidebarItem
-                icon={<IconInbox className="h-4 w-4" />}
-                label="Incoming"
-                active={view.type === "incoming"}
-                onClick={() => setView({ type: "incoming" })}
-              />
-              <SidebarItem
-                icon={<IconNetwork className="h-4 w-4" />}
-                label="Peppol"
-                active={view.type === "peppol"}
-                onClick={() => setView({ type: "peppol" })}
-              />
-              <SidebarItem
-                icon={<IconSettings className="h-4 w-4" />}
-                label="Seller Settings"
-                active={view.type === "settings"}
-                onClick={() => setView({ type: "settings" })}
-              />
+
+              <SidebarSection title="Peppol">
+                <SidebarItem
+                  icon={<IconInbox className="h-4 w-4" />}
+                  label="Incoming Docs"
+                  active={view.type === "incoming"}
+                  onClick={() => setView({ type: "incoming" })}
+                />
+                <SidebarItem
+                  icon={<IconSend className="h-4 w-4" />}
+                  label="Outgoing Logs"
+                  active={view.type === "peppol"}
+                  onClick={() => setView({ type: "peppol" })}
+                />
+              </SidebarSection>
             </Sidebar>
           </AppShellSidebar>
 
