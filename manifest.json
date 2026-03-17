@@ -63,6 +63,31 @@
         { "name": "default_vat_rate", "type": "number" },
         { "name": "invoice_prefix", "type": "text" }
       ]
+    },
+    {
+      "entityName": "peppol_registration",
+      "fields": [
+        { "name": "peppol_id", "type": "text" },
+        { "name": "dokapi_ulid", "type": "text" },
+        { "name": "status", "type": "text", "enum_values": ["not_registered", "pending", "active", "failed"], "required": true },
+        { "name": "document_types_registered", "type": "boolean" },
+        { "name": "business_card_pushed", "type": "boolean" },
+        { "name": "error_message", "type": "text" }
+      ]
+    },
+    {
+      "entityName": "peppol_send_log",
+      "fields": [
+        { "name": "invoice_id", "type": "entity_link", "references": { "entity": "invoice", "field": "id" }, "required": true },
+        { "name": "invoice_number", "type": "text" },
+        { "name": "status", "type": "text", "enum_values": ["pending", "sent", "delivered", "failed"], "required": true },
+        { "name": "dokapi_ulid", "type": "text" },
+        { "name": "sender_peppol_id", "type": "text" },
+        { "name": "receiver_peppol_id", "type": "text" },
+        { "name": "ubl_xml", "type": "text" },
+        { "name": "error_message", "type": "text" },
+        { "name": "sent_at", "type": "timestamp" }
+      ]
     }
   ],
   "permissions": {
@@ -74,7 +99,11 @@
       { "key": "invoice.write", "description": "Create and edit invoices" },
       { "key": "invoice.delete", "description": "Delete invoices" },
       { "key": "seller_settings.read", "description": "View seller settings" },
-      { "key": "seller_settings.write", "description": "Edit seller settings" }
+      { "key": "seller_settings.write", "description": "Edit seller settings" },
+      { "key": "peppol_registration.read", "description": "View Peppol registration" },
+      { "key": "peppol_registration.write", "description": "Manage Peppol registration" },
+      { "key": "peppol_send_log.read", "description": "View Peppol send history" },
+      { "key": "peppol_send_log.write", "description": "Create Peppol send log entries" }
     ]
   }
 }

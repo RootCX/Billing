@@ -4,14 +4,15 @@ import {
   PageHeader, Button, Tabs, TabsList, TabsTrigger, TabsContent,
   toast, LoadingState, ErrorState, ConfirmDialog,
 } from "@rootcx/ui";
-import { IconArrowLeft, IconDeviceFloppy, IconSend } from "@tabler/icons-react";
-import type { Invoice, LineItem, InvoiceReference } from "../types";
+import { IconArrowLeft, IconDeviceFloppy, IconSend, IconNetwork } from "@tabler/icons-react";
+import type { Invoice, LineItem, InvoiceReference, PeppolRegistration } from "../types";
 import {
   computeTotals, generateInvoiceNumber, todayISO, addDays,
 } from "../types";
 import InvoiceDetailsTab from "../components/InvoiceDetailsTab";
 import InvoiceComplianceTab from "../components/InvoiceComplianceTab";
 import InvoicePreview from "../components/InvoicePreview";
+import PeppolSendDialog from "../components/PeppolSendDialog";
 
 const APP_ID = "billing";
 
@@ -51,6 +52,8 @@ export default function InvoiceDetailView({ invoiceId, onBack }: Props) {
   const isNew = invoiceId === null;
 
   const { create } = useAppCollection<Invoice>(APP_ID, "invoice");
+  const { data: peppolRegs } = useAppCollection<PeppolRegistration>(APP_ID, "peppol_registration");
+  const peppolActive = peppolRegs?.[0]?.status === "active";
   const {
     data: existingInvoice,
     loading,
@@ -61,6 +64,7 @@ export default function InvoiceDetailView({ invoiceId, onBack }: Props) {
   const [draft, setDraft] = useState<Partial<Invoice>>(buildDefaultInvoice());
   const [saving, setSaving] = useState(false);
   const [confirmSentOpen, setConfirmSentOpen] = useState(false);
+  const [peppolDialogOpen, setPeppolDialogOpen] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
   // Load existing invoice into draft
@@ -158,6 +162,7 @@ export default function InvoiceDetailView({ invoiceId, onBack }: Props) {
 
   const lineItemIssues = (draft.line_items ?? []).length === 0 ? 1 : 0;
   const totalIssues = missingClientFields + lineItemIssues;
+  const isCompliant = totalIssues === 0;
 
   return (
     <div className="flex flex-col h-full">
@@ -173,7 +178,13 @@ export default function InvoiceDetailView({ invoiceId, onBack }: Props) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {draft.status === "draft" && (
+          {draft.status === "draft" && peppolActive && isCompliant && (
+            <Button variant="default" size="sm" onClick={() => setPeppolDialogOpen(true)} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
+              <IconNetwork className="h-4 w-4 mr-2" />
+              Send via Peppol
+            </Button>
+          )}
+          {draft.status === "draft" && !peppolActive && (
             <Button variant="outline" size="sm" onClick={() => setConfirmSentOpen(true)} disabled={saving}>
               <IconSend className="h-4 w-4 mr-2" />
               Mark as Sent
@@ -226,6 +237,18 @@ export default function InvoiceDetailView({ invoiceId, onBack }: Props) {
         description={`This will change the status of ${draft.invoice_number} to Sent and save it immediately. This action cannot be undone from this button.`}
         onConfirm={handleMarkSent}
       />
+
+      {!isNew && draft.status === "draft" && (
+        <PeppolSendDialog
+          open={peppolDialogOpen}
+          onOpenChange={setPeppolDialogOpen}
+          invoice={draft as Invoice}
+          onSent={async () => {
+            await update({ ...(draft as any), status: "sent" });
+            updateDraft({ status: "sent" });
+          }}
+        />
+      )}
     </div>
   );
 }

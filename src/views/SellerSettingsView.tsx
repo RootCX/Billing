@@ -4,6 +4,7 @@ import { PageHeader, Button, Input, Label, Separator, toast, LoadingState } from
 import { IconDeviceFloppy, IconUpload, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type { SellerSettings } from "../types";
+import PeppolRegistrationSection from "../components/PeppolRegistrationSection";
 
 const APP_ID = "billing";
 
@@ -215,6 +216,10 @@ export default function SellerSettingsView() {
             </Field>
           </div>
         </Section>
+
+        <Separator />
+
+        <PeppolRegistrationSection seller={form} />
       </div>
     </div>
   );

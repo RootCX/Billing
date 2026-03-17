@@ -1,6 +1,36 @@
 export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "cancelled";
 export type VatTreatment = "standard" | "exempt" | "reverse_charge" | "intra_eu" | "export";
 export type ReferenceType = "purchase_order" | "contract_number" | "cost_center" | "project_reference" | "custom";
+export type PeppolRegStatus = "not_registered" | "pending" | "active" | "failed";
+export type PeppolSendStatus = "pending" | "sent" | "delivered" | "failed";
+
+export interface PeppolRegistration {
+  id: string;
+  peppol_id: string;
+  dokapi_ulid: string;
+  status: PeppolRegStatus;
+  document_types_registered: boolean;
+  business_card_pushed: boolean;
+  error_message: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PeppolSendLog {
+  id: string;
+  invoice_id: string;
+  invoice_number: string;
+  status: PeppolSendStatus;
+  dokapi_ulid: string;
+  sender_peppol_id: string;
+  receiver_peppol_id: string;
+  ubl_xml: string;
+  error_message: string;
+  sent_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
 
 export interface Customer {
   id: string;
@@ -79,6 +109,29 @@ export interface SellerSettings {
   default_currency: string;
   default_vat_rate: number;
   invoice_prefix: string;
+}
+
+export interface IncomingDocument {
+  id: string;
+  document_ulid: string;
+  document_type: string;
+  document_number: string;
+  issue_date: string;
+  due_date: string;
+  currency: string;
+  amount: number;
+  sender_peppol_id: string;
+  sender_name: string;
+  sender_vat: string;
+  receiver_peppol_id: string;
+  receiver_name: string;
+  status: string;
+  instance_identifier: string;
+  as4_message_id: string;
+  xml: string;
+  attachments: unknown[];
+  created_at: string;
+  updated_at: string;
 }
 
 export function applyCustomerToDraft(c: Customer): Partial<Invoice> {

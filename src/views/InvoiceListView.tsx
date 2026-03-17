@@ -3,8 +3,8 @@ import { useAppCollection, type WhereClause } from "@rootcx/sdk";
 import {
   PageHeader, DataTable, EmptyState, Button, Badge, type SortingState,
 } from "@rootcx/ui";
-import { IconPlus, IconFileInvoice } from "@tabler/icons-react";
-import type { Invoice, InvoiceStatus, VatTreatment } from "../types";
+import { IconPlus, IconFileInvoice, IconNetwork } from "@tabler/icons-react";
+import type { Invoice, InvoiceStatus, VatTreatment, PeppolSendLog } from "../types";
 import { formatCurrency, formatDate } from "../types";
 import {
   FilterBar, conditionToWhereClause,
@@ -102,6 +102,16 @@ export default function InvoiceListView({ onOpenInvoice, onNewInvoice }: Props) 
     where, orderBy, order, limit: PAGE_SIZE, offset: pageIndex * PAGE_SIZE,
   });
 
+  // Fetch peppol send logs for current page to show badge
+  const invoiceIds = (invoices ?? []).map((i) => i.id);
+  const { data: peppolLogs } = useAppCollection<PeppolSendLog>(APP_ID, "peppol_send_log", {
+    where: invoiceIds.length > 0 ? { invoice_id: { $in: invoiceIds } } : { invoice_id: { $eq: "none" } },
+  });
+  const sentInvoiceIds = useMemo(
+    () => new Set((peppolLogs ?? []).filter((l) => l.status === "sent" || l.status === "delivered").map((l) => l.invoice_id)),
+    [peppolLogs],
+  );
+
   const hasAny = conditions.length > 0 || !!search;
 
   // ── Columns ────────────────────────────────────────────────────────────────
@@ -148,9 +158,17 @@ export default function InvoiceListView({ onOpenInvoice, onNewInvoice }: Props) 
     {
       accessorKey: "status", header: "Status",
       cell: ({ row }: { row: { original: Invoice } }) => (
-        <Badge variant={STATUS_VARIANT[row.original.status] ?? "secondary"}>
-          {STATUSES.find(s => s.value === row.original.status)?.label ?? row.original.status}
-        </Badge>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <Badge variant={STATUS_VARIANT[row.original.status] ?? "secondary"}>
+            {STATUSES.find(s => s.value === row.original.status)?.label ?? row.original.status}
+          </Badge>
+          {sentInvoiceIds.has(row.original.id) && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
+              <IconNetwork className="h-3 w-3" />
+              Peppol
+            </span>
+          )}
+        </div>
       ),
     },
   ];
