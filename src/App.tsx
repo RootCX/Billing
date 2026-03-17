@@ -5,19 +5,23 @@ import {
   Sidebar, SidebarItem,
   Toaster,
 } from "@rootcx/ui";
-import { IconFileInvoice, IconSettings, IconLogout, IconUsers } from "@tabler/icons-react";
+import { IconFileInvoice, IconSettings, IconLogout, IconUsers, IconNetwork, IconInbox } from "@tabler/icons-react";
 import { Button } from "@rootcx/ui";
 import InvoiceListView from "./views/InvoiceListView";
 import InvoiceDetailView from "./views/InvoiceDetailView";
 import SellerSettingsView from "./views/SellerSettingsView";
 import CustomersView from "./views/CustomersView";
+import PeppolTransmissionsView from "./views/PeppolTransmissionsView";
+import IncomingInvoicesView from "./views/IncomingInvoicesView";
 
 export type AppView =
   | { type: "list" }
   | { type: "detail"; invoiceId: string }
   | { type: "new" }
   | { type: "settings" }
-  | { type: "customers" };
+  | { type: "customers" }
+  | { type: "peppol" }
+  | { type: "incoming" };
 
 export default function App() {
   const [view, setView] = useState<AppView>({ type: "list" });
@@ -58,6 +62,18 @@ export default function App() {
                 onClick={() => setView({ type: "customers" })}
               />
               <SidebarItem
+                icon={<IconInbox className="h-4 w-4" />}
+                label="Incoming"
+                active={view.type === "incoming"}
+                onClick={() => setView({ type: "incoming" })}
+              />
+              <SidebarItem
+                icon={<IconNetwork className="h-4 w-4" />}
+                label="Peppol"
+                active={view.type === "peppol"}
+                onClick={() => setView({ type: "peppol" })}
+              />
+              <SidebarItem
                 icon={<IconSettings className="h-4 w-4" />}
                 label="Seller Settings"
                 active={view.type === "settings"}
@@ -87,6 +103,12 @@ export default function App() {
             )}
             {view.type === "customers" && <CustomersView />}
             {view.type === "settings" && <SellerSettingsView />}
+            {view.type === "incoming" && <IncomingInvoicesView />}
+            {view.type === "peppol" && (
+              <PeppolTransmissionsView
+                onOpenInvoice={(id) => setView({ type: "detail", invoiceId: id })}
+              />
+            )}
           </AppShellMain>
 
           <Toaster />
@@ -95,3 +117,4 @@ export default function App() {
     </AuthGate>
   );
 }
+
