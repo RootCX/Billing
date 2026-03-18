@@ -1,14 +1,20 @@
 import { useState } from "react";
 import { useAppCollection } from "@rootcx/sdk";
 import {
-  Input, Label, Textarea, Button, Separator,
+  Input, Label, Textarea, Button, Separator, Badge,
   Select, SelectTrigger, SelectContent, SelectItem, SelectValue,
   Popover, PopoverTrigger, PopoverContent,
   FormDialog, toast,
 } from "@rootcx/ui";
-import { IconPlus, IconSearch, IconLink, IconLinkOff, IconUser } from "@tabler/icons-react";
-import type { Invoice, LineItem, InvoiceReference, Customer } from "../types";
-import { formatCurrency, applyCustomerToDraft, CUSTOMER_FORM_FIELDS } from "../types";
+import {
+  IconPlus, IconSearch, IconLink, IconLinkOff, IconUser, IconChevronDown,
+  IconStar, IconStarFilled,
+} from "@tabler/icons-react";
+import type { Invoice, LineItem, InvoiceReference, Customer, Contact } from "../types";
+import {
+  formatCurrency, applyCustomerToDraft, CUSTOMER_FORM_FIELDS, CONTACT_FORM_FIELDS,
+  contactDisplayName,
+} from "../types";
 import LineItemDialog from "./LineItemDialog";
 import ReferencesSection from "./ReferencesSection";
 import LineItemRow from "./LineItemRow";
@@ -50,43 +56,91 @@ interface Props {
 }
 
 export default function InvoiceDetailsTab({ draft, onChange }: Props) {
-  const [lineItemDialogOpen, setLineItemDialogOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<LineItem | null>(null);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [linkedCustomerId, setLinkedCustomerId] = useState<string | null>(null);
-  const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
+  const [lineItemDialogOpen, setLineItemDialogOpen]   = useState(false);
+  const [editingItem, setEditingItem]                 = useState<LineItem | null>(null);
 
-  const { data: customers, create: createCustomer } = useAppCollection<Customer>(APP_ID, "customer");
+  // Customer linking state
+  const [searchOpen, setSearchOpen]                   = useState(false);
+  const [searchQuery, setSearchQuery]                 = useState("");
+  const [linkedCustomerId, setLinkedCustomerId]       = useState<string | null>(null);
+  const [linkedContactId, setLinkedContactId]         = useState<string | null>(null);
+  const [contactPickerOpen, setContactPickerOpen]     = useState(false);
+  const [createCustomerOpen, setCreateCustomerOpen]   = useState(false);
+  const [addContactOpen, setAddContactOpen]           = useState(false);
+
+  const { data: customers, create: createCustomer } =
+    useAppCollection<Customer>(APP_ID, "customer");
+
+  const { data: contacts, create: createContact } =
+    useAppCollection<Contact>(APP_ID, "contact", {
+      where: linkedCustomerId ? { customer_id: linkedCustomerId } : undefined,
+      orderBy: "created_at", order: "asc",
+    });
 
   const lineItems: LineItem[] = draft.line_items ?? [];
   const currency = draft.currency || "EUR";
-  const linkedCustomer = linkedCustomerId ? (customers ?? []).find((c) => c.id === linkedCustomerId) : null;
+
+  const linkedCustomer = linkedCustomerId
+    ? (customers ?? []).find((c) => c.id === linkedCustomerId) ?? null
+    : null;
+  const linkedContact = linkedContactId
+    ? (contacts ?? []).find((c) => c.id === linkedContactId) ?? null
+    : null;
 
   const filteredCustomers = (customers ?? []).filter((c) => {
     const q = searchQuery.toLowerCase();
-    return c.company_name?.toLowerCase().includes(q)
-      || c.contact_name?.toLowerCase().includes(q)
-      || c.contact_email?.toLowerCase().includes(q);
+    return c.company_name?.toLowerCase().includes(q);
   });
 
+  // ── Link a customer ─────────────────────────────────────────────────────────
   const linkCustomer = (c: Customer) => {
     setLinkedCustomerId(c.id);
-    onChange(applyCustomerToDraft(c));
+    setLinkedContactId(null);
     setSearchOpen(false);
     setSearchQuery("");
+    // Apply company fields immediately; contact fields cleared until one is chosen
+    onChange(applyCustomerToDraft(c, undefined));
+    // Open contact picker after a tick so popover is closed first
+    setTimeout(() => setContactPickerOpen(true), 100);
   };
 
+  const unlinkCustomer = () => {
+    setLinkedCustomerId(null);
+    setLinkedContactId(null);
+  };
+
+  // ── Pick a contact ──────────────────────────────────────────────────────────
+  const pickContact = (contact: Contact) => {
+    setLinkedContactId(contact.id);
+    setContactPickerOpen(false);
+    if (linkedCustomer) {
+      onChange(applyCustomerToDraft(linkedCustomer, contact));
+    }
+  };
+
+  // ── Create & link customer ──────────────────────────────────────────────────
   const handleCreateAndLink = async (values: Record<string, any>) => {
     try {
       const c = await createCustomer(values);
       setLinkedCustomerId(c.id);
-      onChange(applyCustomerToDraft(c));
+      setLinkedContactId(null);
       setCreateCustomerOpen(false);
+      onChange(applyCustomerToDraft(c, undefined));
       toast.success("Customer created and linked");
-    } catch (e: any) {
-      toast.error(e.message);
-    }
+      setTimeout(() => setContactPickerOpen(true), 100);
+    } catch (e: any) { toast.error(e.message); }
+  };
+
+  // ── Create contact for linked customer ─────────────────────────────────────
+  const handleCreateContact = async (values: Record<string, any>) => {
+    if (!linkedCustomerId) return;
+    try {
+      const contact = await createContact({ ...values, customer_id: linkedCustomerId });
+      setLinkedContactId(contact.id);
+      setAddContactOpen(false);
+      if (linkedCustomer) onChange(applyCustomerToDraft(linkedCustomer, contact));
+      toast.success("Contact added and selected");
+    } catch (e: any) { toast.error(e.message); }
   };
 
   const handleAddLineItem = (item: LineItem) => {
@@ -146,14 +200,14 @@ export default function InvoiceDetailsTab({ draft, onChange }: Props) {
 
       <Separator className="my-4" />
 
-      {/* Client section header with link/unlink controls */}
+      {/* ── Client section ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-3 mt-5">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Client Information
         </p>
         <div className="flex items-center gap-1">
           {linkedCustomer ? (
-            <button onClick={() => setLinkedCustomerId(null)}
+            <button onClick={unlinkCustomer}
               className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
               <IconLinkOff className="h-3 w-3" />Unlink
             </button>
@@ -169,7 +223,7 @@ export default function InvoiceDetailsTab({ draft, onChange }: Props) {
                   <div className="relative mb-2">
                     <IconSearch className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
                     <input autoFocus value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search customers…"
+                      placeholder="Search companies…"
                       className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md border bg-background focus:outline-none focus:ring-1 focus:ring-ring" />
                   </div>
                   <div className="max-h-48 overflow-y-auto space-y-0.5">
@@ -179,7 +233,7 @@ export default function InvoiceDetailsTab({ draft, onChange }: Props) {
                           <button key={c.id} onClick={() => linkCustomer(c)}
                             className="w-full text-left px-2 py-1.5 rounded-sm text-xs hover:bg-accent transition-colors">
                             <span className="font-medium">{c.company_name}</span>
-                            {c.contact_name && <span className="text-muted-foreground ml-1.5">· {c.contact_name}</span>}
+                            {c.city && <span className="text-muted-foreground ml-1.5">· {c.city}</span>}
                           </button>
                         ))
                     }
@@ -201,11 +255,58 @@ export default function InvoiceDetailsTab({ draft, onChange }: Props) {
         </div>
       </div>
 
+      {/* Linked customer badge */}
       {linkedCustomer && (
-        <div className="flex items-center gap-2 mb-3 px-2.5 py-1.5 rounded-md bg-primary/8 border border-primary/20 text-xs">
+        <div className="flex items-center gap-2 mb-2 px-2.5 py-1.5 rounded-md bg-primary/8 border border-primary/20 text-xs">
           <IconUser className="h-3.5 w-3.5 text-primary shrink-0" />
           <span className="font-medium text-primary truncate">{linkedCustomer.company_name}</span>
           <span className="text-muted-foreground ml-auto shrink-0">linked</span>
+        </div>
+      )}
+
+      {/* Contact picker (only visible when a customer is linked) */}
+      {linkedCustomer && (
+        <div className="mb-3">
+          <Popover open={contactPickerOpen} onOpenChange={setContactPickerOpen}>
+            <PopoverTrigger asChild>
+              <button className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-md border text-xs hover:bg-accent transition-colors">
+                <div className="flex items-center gap-2 min-w-0">
+                  <IconUser className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  {linkedContact
+                    ? <span className="font-medium truncate">{contactDisplayName(linkedContact)}{linkedContact.email ? ` · ${linkedContact.email}` : ""}</span>
+                    : <span className="text-muted-foreground">Select a contact…</span>
+                  }
+                </div>
+                <IconChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0 ml-2" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-64 p-2" align="start">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2 px-1">
+                Contacts — {linkedCustomer.company_name}
+              </p>
+              <div className="max-h-48 overflow-y-auto space-y-0.5">
+                {(!contacts || contacts.length === 0) && (
+                  <p className="text-xs text-muted-foreground text-center py-3">No contacts yet</p>
+                )}
+                {(contacts ?? []).map((c) => (
+                  <button key={c.id} onClick={() => pickContact(c)}
+                    className="w-full text-left px-2 py-1.5 rounded-sm text-xs hover:bg-accent transition-colors">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium">{contactDisplayName(c)}</span>
+                      {c.is_default && <Badge variant="secondary" className="text-[10px] px-1 py-0 leading-none">Default</Badge>}
+                    </div>
+                    {c.job_title && <span className="text-muted-foreground">{c.job_title}</span>}
+                    {c.email     && <span className="block text-muted-foreground">{c.email}</span>}
+                  </button>
+                ))}
+              </div>
+              <Separator className="my-2" />
+              <button onClick={() => { setContactPickerOpen(false); setAddContactOpen(true); }}
+                className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-sm text-xs text-primary hover:bg-accent transition-colors font-medium">
+                <IconPlus className="h-3.5 w-3.5" />Add new contact
+              </button>
+            </PopoverContent>
+          </Popover>
         </div>
       )}
 
@@ -304,6 +405,7 @@ export default function InvoiceDetailsTab({ draft, onChange }: Props) {
           placeholder="Add terms and conditions" className="text-sm min-h-[72px] resize-none" />
       </Field>
 
+      {/* Dialogs */}
       <LineItemDialog
         open={lineItemDialogOpen}
         onOpenChange={(open) => { setLineItemDialogOpen(open); if (!open) setEditingItem(null); }}
@@ -319,6 +421,15 @@ export default function InvoiceDetailsTab({ draft, onChange }: Props) {
         fields={CUSTOMER_FORM_FIELDS}
         onSubmit={handleCreateAndLink}
         submitLabel="Create & Link" />
+
+      <FormDialog
+        open={addContactOpen}
+        onOpenChange={setAddContactOpen}
+        title="Add Contact"
+        description={linkedCustomer ? `Add a contact for ${linkedCustomer.company_name}.` : ""}
+        fields={CONTACT_FORM_FIELDS}
+        onSubmit={handleCreateContact}
+        submitLabel="Add & Select" />
     </div>
   );
 }

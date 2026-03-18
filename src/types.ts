@@ -40,10 +40,20 @@ export interface Customer {
   city: string;
   postal_code: string;
   country_code: string;
-  contact_name: string;
-  contact_email: string;
-  phone: string;
   notes: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Contact {
+  id: string;
+  customer_id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  job_title: string;
+  is_default: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -145,7 +155,7 @@ export interface IncomingDocument {
   updated_at: string;
 }
 
-export function applyCustomerToDraft(c: Customer): Partial<Invoice> {
+export function applyCustomerToDraft(c: Customer, contact?: Contact): Partial<Invoice> {
   return {
     client_company: c.company_name,
     client_vat: c.vat_number ?? "",
@@ -153,8 +163,8 @@ export function applyCustomerToDraft(c: Customer): Partial<Invoice> {
     client_city: c.city ?? "",
     client_postal: c.postal_code ?? "",
     client_country: c.country_code ?? "",
-    client_contact_name: c.contact_name ?? "",
-    client_contact_email: c.contact_email ?? "",
+    client_contact_name: contact ? `${contact.first_name} ${contact.last_name ?? ""}`.trim() : "",
+    client_contact_email: contact?.email ?? "",
   };
 }
 
@@ -165,11 +175,20 @@ export const CUSTOMER_FORM_FIELDS = [
   { name: "city",         label: "City",         type: "text" as const },
   { name: "postal_code",  label: "Postal Code",  type: "text" as const },
   { name: "country_code", label: "Country Code", type: "text" as const },
-  { name: "contact_name", label: "Contact Name", type: "text" as const },
-  { name: "contact_email",label: "Contact Email",type: "text" as const },
-  { name: "phone",        label: "Phone",        type: "text" as const },
   { name: "notes",        label: "Notes",        type: "textarea" as const },
 ];
+
+export const CONTACT_FORM_FIELDS = [
+  { name: "first_name",  label: "First Name",  type: "text" as const, required: true },
+  { name: "last_name",   label: "Last Name",   type: "text" as const },
+  { name: "email",       label: "Email",       type: "text" as const },
+  { name: "phone",       label: "Phone",       type: "text" as const },
+  { name: "job_title",   label: "Job Title",   type: "text" as const },
+];
+
+export function contactDisplayName(c: Contact): string {
+  return `${c.first_name} ${c.last_name ?? ""}`.trim();
+}
 
 export function computeLineItem(item: LineItem) {
   const gross = item.quantity * item.unit_price;

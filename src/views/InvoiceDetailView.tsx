@@ -3,9 +3,10 @@ import { useAppCollection, useAppRecord } from "@rootcx/sdk";
 import {
   PageHeader, Button, Tabs, TabsList, TabsTrigger, TabsContent,
   toast, LoadingState, ErrorState, ConfirmDialog,
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from "@rootcx/ui";
-import { IconArrowLeft, IconDeviceFloppy, IconSend, IconNetwork } from "@tabler/icons-react";
-import type { Invoice, LineItem, InvoiceReference, PeppolRegistration } from "../types";
+import { IconArrowLeft, IconDeviceFloppy, IconSend, IconNetwork, IconPrinter, IconDotsVertical } from "@tabler/icons-react";
+import type { Invoice, LineItem, InvoiceReference, PeppolRegistration, SellerSettings } from "../types";
 import {
   computeTotals, generateInvoiceNumber, todayISO, addDays,
 } from "../types";
@@ -13,6 +14,7 @@ import InvoiceDetailsTab from "../components/InvoiceDetailsTab";
 import InvoiceComplianceTab from "../components/InvoiceComplianceTab";
 import InvoicePreview from "../components/InvoicePreview";
 import PeppolSendDialog from "../components/PeppolSendDialog";
+import { downloadInvoicePdf } from "../lib/downloadInvoicePdf";
 
 const APP_ID = "billing";
 
@@ -53,6 +55,8 @@ export default function InvoiceDetailView({ invoiceId, onBack }: Props) {
 
   const { create } = useAppCollection<Invoice>(APP_ID, "invoice");
   const { data: peppolRegs } = useAppCollection<PeppolRegistration>(APP_ID, "peppol_registration");
+  const { data: sellerSettings } = useAppCollection<SellerSettings>(APP_ID, "seller_settings");
+  const seller = sellerSettings?.[0];
   const peppolActive = peppolRegs?.[0]?.status === "active";
   const {
     data: existingInvoice,
@@ -194,6 +198,21 @@ export default function InvoiceDetailView({ invoiceId, onBack }: Props) {
             <IconDeviceFloppy className="h-4 w-4 mr-2" />
             {saving ? "Saving…" : isNew ? "Create Invoice" : "Save"}
           </Button>
+          {!isNew && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon">
+                  <IconDotsVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => downloadInvoicePdf(draft as Invoice, seller)}>
+                  <IconPrinter className="h-4 w-4 mr-2" />
+                  Print
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 

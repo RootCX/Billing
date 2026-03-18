@@ -13,10 +13,19 @@
         { "name": "city", "type": "text" },
         { "name": "postal_code", "type": "text" },
         { "name": "country_code", "type": "text" },
-        { "name": "contact_name", "type": "text" },
-        { "name": "contact_email", "type": "text" },
-        { "name": "phone", "type": "text" },
         { "name": "notes", "type": "text" }
+      ]
+    },
+    {
+      "entityName": "contact",
+      "fields": [
+        { "name": "customer_id", "type": "entity_link", "references": { "entity": "customer", "field": "id" }, "required": true },
+        { "name": "first_name", "type": "text", "required": true },
+        { "name": "last_name", "type": "text" },
+        { "name": "email", "type": "text" },
+        { "name": "phone", "type": "text" },
+        { "name": "job_title", "type": "text" },
+        { "name": "is_default", "type": "boolean" }
       ]
     },
     {
@@ -95,6 +104,9 @@
       { "key": "customer.read", "description": "View customers" },
       { "key": "customer.write", "description": "Create and edit customers" },
       { "key": "customer.delete", "description": "Delete customers" },
+      { "key": "contact.read", "description": "View contacts" },
+      { "key": "contact.write", "description": "Create and edit contacts" },
+      { "key": "contact.delete", "description": "Delete contacts" },
       { "key": "invoice.read", "description": "View invoices" },
       { "key": "invoice.write", "description": "Create and edit invoices" },
       { "key": "invoice.delete", "description": "Delete invoices" },
