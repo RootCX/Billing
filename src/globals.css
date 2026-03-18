@@ -73,3 +73,16 @@
     letter-spacing: var(--tracking-normal);
   }
 }
+
+@media print {
+  body > *:not(#print-root) {
+    display: none !important;
+  }
+  #print-root {
+    display: block !important;
+  }
+  @page {
+    margin: 12mm;
+    size: A4;
+  }
+}

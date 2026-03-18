@@ -2,5 +2,5 @@
   "identifier": "default",
   "description": "Default capabilities",
   "windows": ["main"],
-  "permissions": ["core:default", "shell:allow-open"]
+  "permissions": ["core:default", "shell:allow-open", "core:webview:allow-print"]
 }
