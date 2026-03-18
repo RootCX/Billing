@@ -18,9 +18,6 @@ Billing is a full-featured invoicing app that runs as a native desktop applicati
 ## Malleable software
 
 This app is designed to be forked, adapted, and made your own. The entire source code is here:use it as-is for your invoicing needs, or take it as a starting point and reshape it to fit your business. Add fields, change workflows, plug in your own integrations. That's the point of malleable software: you own it, you shape it.
-
-Built on RootCX, but the patterns are portable. Swap out the backend if you want:the UI components, invoice logic, and overall architecture stand on their own.
-
 ## Getting started
 
 ### Prerequisites
