@@ -49,7 +49,7 @@ export default function App() {
                     onClick={() => setView({ type: "settings" })}
                   />
                   <div className="flex items-center justify-between">
-                    <span className="truncate text-sm text-muted-foreground">{user.username}</span>
+                    <span className="truncate text-sm text-muted-foreground">{user.email}</span>
                     <Button variant="ghost" size="icon" onClick={() => logout()}>
                       <IconLogout className="h-4 w-4" />
                     </Button>
