@@ -3,7 +3,7 @@ import { useAppCollection, useIntegration } from "@rootcx/sdk";
 import { Button, toast, ConfirmDialog } from "@rootcx/ui";
 import {
   IconCircleCheck, IconAlertCircle, IconLoader2,
-  IconRefresh, IconSend, IconPlugConnected, IconWifi,
+  IconRefresh, IconPlugConnected, IconWifi,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type { PeppolRegistration, SellerSettings } from "../types";
@@ -22,7 +22,6 @@ export default function PeppolRegistrationSection({ seller }: Props) {
   const [pollingHandle, setPollingHandle] = useState<ReturnType<typeof setInterval> | null>(null);
   const [confirmConnect, setConfirmConnect] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
-  const [confirmTest, setConfirmTest] = useState(false);
 
   const reg = regs?.[0] ?? null;
 
@@ -102,18 +101,6 @@ export default function PeppolRegistrationSection({ seller }: Props) {
     } catch { /* silent */ }
   };
 
-  const handleSendTest = async () => {
-    if (!reg?.peppol_id || !seller.vat_number) return;
-    setBusy(true);
-    try {
-      const res = await call("send_test_invoice", { peppolId: reg.peppol_id, vatNumber: seller.vat_number }) as { dokapiUlid: string; invoiceNumber: string };
-      toast.success(`Test sent — ${res.invoiceNumber}`);
-    } catch (e: any) {
-      toast.error("Test failed: " + e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const handleDeregister = async () => {
     if (!reg?.peppol_id) return;
@@ -242,13 +229,7 @@ export default function PeppolRegistrationSection({ seller }: Props) {
             </div>
 
             {/* Actions */}
-            <div className="flex items-center justify-between border-t pt-3">
-              <Button size="sm" variant="outline" onClick={() => setConfirmTest(true)} disabled={busy}>
-                {busy
-                  ? <IconLoader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                  : <IconSend className="h-3.5 w-3.5 mr-1.5" />}
-                Send test
-              </Button>
+            <div className="flex items-center justify-end border-t pt-3">
               <button
                 onClick={() => setConfirmDisconnect(true)}
                 disabled={busy}
@@ -299,13 +280,6 @@ export default function PeppolRegistrationSection({ seller }: Props) {
         onConfirm={handleDeregister}
       />
 
-      <ConfirmDialog
-        open={confirmTest}
-        onOpenChange={setConfirmTest}
-        title="Send a test invoice?"
-        description={`This will send a test invoice to yourself (${reg?.peppol_id ?? ""}) to verify that your Peppol connection is working correctly.`}
-        onConfirm={handleSendTest}
-      />
     </div>
   );
 }
