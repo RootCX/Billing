@@ -10,7 +10,7 @@ import type { Invoice, LineItem, PeppolRegistration, SellerSettings } from "../t
 import {
   computeTotals, generateInvoiceNumber, todayISO, addDays,
 } from "../types";
-import InvoiceDetailsTab from "../components/InvoiceDetailsTab";
+import InvoiceDetailsTab, { FIELD_NONE } from "../components/InvoiceDetailsTab";
 import InvoiceComplianceTab from "../components/InvoiceComplianceTab";
 import InvoicePreview from "../components/InvoicePreview";
 import PeppolSendDialog from "../components/PeppolSendDialog";
@@ -122,8 +122,9 @@ export default function InvoiceDetailView({ invoiceId, onBack }: Props) {
         client_contact_email: draft.client_contact_email ?? "",
         line_items: draft.line_items ?? [],
         references: draft.references ?? [],
-        internal_notes: draft.internal_notes || seller?.default_notes || "",
-        terms: draft.terms || seller?.default_terms || "",
+        // FIELD_NONE = explicitly removed; "" = inherit seller default then freeze
+        internal_notes: draft.internal_notes === FIELD_NONE ? FIELD_NONE : (draft.internal_notes || seller?.default_notes || ""),
+        terms: draft.terms === FIELD_NONE ? FIELD_NONE : (draft.terms || seller?.default_terms || ""),
         subtotal: draft.subtotal ?? 0,
         total_tax: draft.total_tax ?? 0,
         total: draft.total ?? 0,

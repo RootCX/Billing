@@ -1,8 +1,8 @@
-import type { Invoice, LineItem } from "../types";
+import type { Invoice, LineItem, SellerSettings } from "../types";
 import { computeLineItem, formatCurrency, formatDate } from "../types";
 import { useAppCollection } from "@rootcx/sdk";
-import type { SellerSettings } from "../types";
 import { cn } from "@/lib/utils";
+import { FIELD_NONE } from "./InvoiceDetailsTab";
 
 const APP_ID = "billing";
 
@@ -225,8 +225,8 @@ export default function InvoicePreview({ invoice }: Props) {
 
           {/* Notes & Terms */}
           {(() => {
-            const notes = invoice.internal_notes || seller?.default_notes;
-            const terms = invoice.terms || seller?.default_terms;
+            const notes = invoice.internal_notes === FIELD_NONE ? null : (invoice.internal_notes || seller?.default_notes);
+            const terms = invoice.terms === FIELD_NONE ? null : (invoice.terms || seller?.default_terms);
             return (notes || terms) ? (
               <div className="border-t border-slate-100 pt-6 space-y-5">
                 {notes && (

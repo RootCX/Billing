@@ -8,12 +8,15 @@ import {
 } from "@rootcx/ui";
 import {
   IconPlus, IconSearch, IconLink, IconLinkOff, IconUser, IconChevronDown,
-  IconEdit, IconX, IconFileText,
+  IconEdit, IconX, IconFileText, IconTrash,
 } from "@tabler/icons-react";
+
+// sentinel: field explicitly cleared — nothing printed on invoice
+export const FIELD_NONE = "__none__";
 
 interface OverrideFieldProps {
   label: string;
-  value: string;
+  value: string;        // raw stored value ("" | FIELD_NONE | custom text)
   defaultValue: string;
   placeholder: string;
   emptyHint: string;
@@ -21,33 +24,56 @@ interface OverrideFieldProps {
   onChange: (v: string) => void;
 }
 
-const OverrideField = ({ label, value, defaultValue, placeholder, emptyHint, minH = "min-h-[72px]", onChange }: OverrideFieldProps) => (
-  <div className="space-y-1 mb-3">
-    <div className="flex items-center justify-between">
-      <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
-      {value ? (
-        <button onClick={() => onChange("")} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-destructive transition-colors">
-          <IconX className="h-3 w-3" />Reset to default
-        </button>
+const OverrideField = ({ label, value, defaultValue, placeholder, emptyHint, minH = "min-h-[72px]", onChange }: OverrideFieldProps) => {
+  const isNone     = value === FIELD_NONE;
+  const isOverride = value && !isNone;
+
+  return (
+    <div className="space-y-1 mb-3">
+      <div className="flex items-center justify-between">
+        <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
+        <div className="flex items-center gap-2">
+          {isOverride && (
+            <button onClick={() => onChange("")} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+              <IconX className="h-3 w-3" />Reset to default
+            </button>
+          )}
+          {!isOverride && !isNone && (
+            <button onClick={() => onChange(defaultValue || " ")} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+              <IconEdit className="h-3 w-3" />Override
+            </button>
+          )}
+          {!isNone && (
+            <button onClick={() => onChange(FIELD_NONE)} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-destructive transition-colors">
+              <IconTrash className="h-3 w-3" />Remove
+            </button>
+          )}
+          {isNone && (
+            <button onClick={() => onChange("")} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+              <IconX className="h-3 w-3" />Restore
+            </button>
+          )}
+        </div>
+      </div>
+
+      {isNone ? (
+        <div className="rounded-md border border-dashed bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground italic">
+          Removed — will not appear on invoice
+        </div>
+      ) : isOverride ? (
+        <Textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
+          className={cn("text-sm resize-none ring-1 ring-amber-400/60", minH)} autoFocus />
       ) : (
-        <button onClick={() => onChange(defaultValue || " ")} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
-          <IconEdit className="h-3 w-3" />Override for this invoice
-        </button>
+        <div className={cn("rounded-md border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground", !defaultValue && "italic")}>
+          {defaultValue
+            ? <span className="whitespace-pre-line line-clamp-3">{defaultValue}</span>
+            : <span className="flex items-center gap-1.5"><IconFileText className="h-3.5 w-3.5 shrink-0" />{emptyHint}</span>
+          }
+        </div>
       )}
     </div>
-    {value ? (
-      <Textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-        className={cn("text-sm resize-none ring-1 ring-amber-400/60", minH)} autoFocus />
-    ) : (
-      <div className={cn("rounded-md border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground", !defaultValue && "italic")}>
-        {defaultValue
-          ? <span className="whitespace-pre-line line-clamp-3">{defaultValue}</span>
-          : <span className="flex items-center gap-1.5"><IconFileText className="h-3.5 w-3.5 shrink-0" />{emptyHint}</span>
-        }
-      </div>
-    )}
-  </div>
-);
+  );
+};
 import type { Invoice, LineItem, InvoiceReference, Customer, Contact } from "../types";
 import {
   formatCurrency, applyCustomerToDraft, CUSTOMER_FORM_FIELDS, CONTACT_FORM_FIELDS,

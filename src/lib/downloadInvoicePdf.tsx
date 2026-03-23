@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import type { Invoice, LineItem, SellerSettings } from "../types";
 import { computeLineItem, formatCurrency, formatDate } from "../types";
 import { cn } from "@/lib/utils";
+import { FIELD_NONE } from "../components/InvoiceDetailsTab";
 
 const VAT_TREATMENT_LABELS: Record<string, string> = {
   standard: "Standard", exempt: "Exempt", reverse_charge: "Reverse Charge",
@@ -161,7 +162,7 @@ function InvoicePrintContent({ invoice, seller }: { invoice: Invoice; seller: Se
       )}
 
       {/* Notes */}
-      {invoice.internal_notes && (
+      {invoice.internal_notes !== FIELD_NONE && invoice.internal_notes && (
         <div style={sec}>
           <div style={lbl}>Notes</div>
           <div style={{ fontSize: 13, color: "#475569", whiteSpace: "pre-wrap" }}>{invoice.internal_notes}</div>
@@ -169,7 +170,7 @@ function InvoicePrintContent({ invoice, seller }: { invoice: Invoice; seller: Se
       )}
 
       {/* Terms & Conditions */}
-      {(invoice.terms || seller?.default_terms) && (
+      {invoice.terms !== FIELD_NONE && (invoice.terms || seller?.default_terms) && (
         <div style={sec}>
           <div style={lbl}>Terms & Conditions</div>
           <div style={{ fontSize: 11, color: "#64748b", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{invoice.terms || seller?.default_terms}</div>
