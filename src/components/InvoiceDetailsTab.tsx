@@ -8,7 +8,7 @@ import {
 } from "@rootcx/ui";
 import {
   IconPlus, IconSearch, IconLink, IconLinkOff, IconUser, IconChevronDown,
-  IconStar, IconStarFilled,
+  IconEdit, IconX, IconFileText,
 } from "@tabler/icons-react";
 import type { Invoice, LineItem, InvoiceReference, Customer, Contact } from "../types";
 import {
@@ -18,6 +18,7 @@ import {
 import LineItemDialog from "./LineItemDialog";
 import ReferencesSection from "./ReferencesSection";
 import LineItemRow from "./LineItemRow";
+import { cn } from "@/lib/utils";
 
 const APP_ID = "billing";
 
@@ -53,20 +54,21 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
 interface Props {
   draft: Partial<Invoice>;
   onChange: (patch: Partial<Invoice>) => void;
+  sellerDefaultTerms?: string;
 }
 
-export default function InvoiceDetailsTab({ draft, onChange }: Props) {
-  const [lineItemDialogOpen, setLineItemDialogOpen]   = useState(false);
-  const [editingItem, setEditingItem]                 = useState<LineItem | null>(null);
+export default function InvoiceDetailsTab({ draft, onChange, sellerDefaultTerms = "" }: Props) {
+  const [lineItemDialogOpen, setLineItemDialogOpen] = useState(false);
+  const [editingItem, setEditingItem]               = useState<LineItem | null>(null);
 
   // Customer linking state
-  const [searchOpen, setSearchOpen]                   = useState(false);
-  const [searchQuery, setSearchQuery]                 = useState("");
-  const [linkedCustomerId, setLinkedCustomerId]       = useState<string | null>(null);
-  const [linkedContactId, setLinkedContactId]         = useState<string | null>(null);
-  const [contactPickerOpen, setContactPickerOpen]     = useState(false);
-  const [createCustomerOpen, setCreateCustomerOpen]   = useState(false);
-  const [addContactOpen, setAddContactOpen]           = useState(false);
+  const [searchOpen, setSearchOpen]             = useState(false);
+  const [searchQuery, setSearchQuery]           = useState("");
+  const [linkedCustomerId, setLinkedCustomerId] = useState<string | null>(null);
+  const [linkedContactId, setLinkedContactId]   = useState<string | null>(null);
+  const [contactPickerOpen, setContactPickerOpen] = useState(false);
+  const [createCustomerOpen, setCreateCustomerOpen] = useState(false);
+  const [addContactOpen, setAddContactOpen]     = useState(false);
 
   const { data: customers, create: createCustomer } =
     useAppCollection<Customer>(APP_ID, "customer");
@@ -92,15 +94,13 @@ export default function InvoiceDetailsTab({ draft, onChange }: Props) {
     return c.company_name?.toLowerCase().includes(q);
   });
 
-  // ── Link a customer ─────────────────────────────────────────────────────────
   const linkCustomer = (c: Customer) => {
     setLinkedCustomerId(c.id);
     setLinkedContactId(null);
     setSearchOpen(false);
     setSearchQuery("");
-    // Apply company fields immediately; contact fields cleared until one is chosen
     onChange(applyCustomerToDraft(c, undefined));
-    // Open contact picker after a tick so popover is closed first
+    // Defer so the search popover closes before the contact one opens
     setTimeout(() => setContactPickerOpen(true), 100);
   };
 
@@ -109,16 +109,12 @@ export default function InvoiceDetailsTab({ draft, onChange }: Props) {
     setLinkedContactId(null);
   };
 
-  // ── Pick a contact ──────────────────────────────────────────────────────────
   const pickContact = (contact: Contact) => {
     setLinkedContactId(contact.id);
     setContactPickerOpen(false);
-    if (linkedCustomer) {
-      onChange(applyCustomerToDraft(linkedCustomer, contact));
-    }
+    if (linkedCustomer) onChange(applyCustomerToDraft(linkedCustomer, contact));
   };
 
-  // ── Create & link customer ──────────────────────────────────────────────────
   const handleCreateAndLink = async (values: Record<string, any>) => {
     try {
       const c = await createCustomer(values);
@@ -131,7 +127,6 @@ export default function InvoiceDetailsTab({ draft, onChange }: Props) {
     } catch (e: any) { toast.error(e.message); }
   };
 
-  // ── Create contact for linked customer ─────────────────────────────────────
   const handleCreateContact = async (values: Record<string, any>) => {
     if (!linkedCustomerId) return;
     try {
@@ -397,13 +392,50 @@ export default function InvoiceDetailsTab({ draft, onChange }: Props) {
 
       <Field label="Internal Notes">
         <Textarea value={draft.internal_notes ?? ""} onChange={(e) => onChange({ internal_notes: e.target.value })}
-          placeholder="Add internal notes" className="text-sm min-h-[72px] resize-none" />
+          placeholder="Add internal notes (not shown on invoice)" className="text-sm min-h-[72px] resize-none" />
       </Field>
 
-      <Field label="Terms &amp; Conditions">
-        <Textarea value={draft.terms ?? ""} onChange={(e) => onChange({ terms: e.target.value })}
-          placeholder="Add terms and conditions" className="text-sm min-h-[72px] resize-none" />
-      </Field>
+      {/* Terms & Conditions — override stored in invoice.terms; empty = use seller default */}
+      <div className="space-y-1 mb-3">
+        <div className="flex items-center justify-between">
+          <Label className="text-xs font-medium text-muted-foreground">Terms &amp; Conditions</Label>
+          {draft.terms ? (
+            <button
+              onClick={() => onChange({ terms: "" })}
+              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-destructive transition-colors"
+            >
+              <IconX className="h-3 w-3" />Reset to default
+            </button>
+          ) : (
+            <button
+              onClick={() => onChange({ terms: sellerDefaultTerms || " " })}
+              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <IconEdit className="h-3 w-3" />Override for this invoice
+            </button>
+          )}
+        </div>
+
+        {draft.terms ? (
+          <Textarea
+            value={draft.terms}
+            onChange={(e) => onChange({ terms: e.target.value })}
+            placeholder="Custom terms for this invoice…"
+            className="text-sm min-h-[88px] resize-none ring-1 ring-amber-400/60"
+            autoFocus
+          />
+        ) : (
+          <div className={cn(
+            "rounded-md border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground",
+            !sellerDefaultTerms && "italic",
+          )}>
+            {sellerDefaultTerms
+              ? <span className="whitespace-pre-line line-clamp-3">{sellerDefaultTerms}</span>
+              : <span className="flex items-center gap-1.5"><IconFileText className="h-3.5 w-3.5 shrink-0" />No default terms — configure in Seller Settings.</span>
+            }
+          </div>
+        )}
+      </div>
 
       {/* Dialogs */}
       <LineItemDialog

@@ -119,6 +119,7 @@ export interface SellerSettings {
   default_currency: string;
   default_vat_rate: number;
   invoice_prefix: string;
+  default_terms: string;
 }
 
 export interface OutgoingStatus {

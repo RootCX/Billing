@@ -1,5 +1,5 @@
 import type { Invoice, LineItem } from "../types";
-import { computeLineItem, formatCurrency, formatDate, REFERENCE_TYPE_LABELS } from "../types";
+import { computeLineItem, formatCurrency, formatDate } from "../types";
 import { useAppCollection } from "@rootcx/sdk";
 import type { SellerSettings } from "../types";
 import { cn } from "@/lib/utils";
@@ -224,18 +224,20 @@ export default function InvoicePreview({ invoice }: Props) {
           )}
 
           {/* Notes & Terms */}
-          {(invoice.internal_notes || invoice.terms) && (
-            <div className="border-t border-slate-100 pt-6 grid grid-cols-2 gap-8">
+          {(invoice.internal_notes || invoice.terms || seller?.default_terms) && (
+            <div className="border-t border-slate-100 pt-6 space-y-5">
               {invoice.internal_notes && (
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1.5">Notes</p>
                   <p className="text-sm text-slate-600 whitespace-pre-line">{invoice.internal_notes}</p>
                 </div>
               )}
-              {invoice.terms && (
+              {(invoice.terms || seller?.default_terms) && (
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1.5">Terms &amp; Conditions</p>
-                  <p className="text-sm text-slate-600 whitespace-pre-line">{invoice.terms}</p>
+                  <p className="text-xs text-slate-500 whitespace-pre-line leading-relaxed">
+                    {invoice.terms || seller?.default_terms}
+                  </p>
                 </div>
               )}
             </div>

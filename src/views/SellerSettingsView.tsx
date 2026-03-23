@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useAppCollection } from "@rootcx/sdk";
-import { PageHeader, Button, Input, Label, Separator, toast, LoadingState } from "@rootcx/ui";
+import { PageHeader, Button, Input, Label, Separator, Textarea, toast, LoadingState } from "@rootcx/ui";
 import { IconDeviceFloppy, IconUpload, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type { SellerSettings } from "../types";
@@ -80,6 +80,7 @@ export default function SellerSettingsView() {
         default_currency: form.default_currency ?? "EUR",
         default_vat_rate: form.default_vat_rate ?? 0,
         invoice_prefix: form.invoice_prefix ?? "INV",
+        default_terms: form.default_terms ?? "",
       };
       data?.[0]?.id ? await update(data[0].id, payload) : await create(payload);
       setLogoFile(null);
@@ -215,6 +216,17 @@ export default function SellerSettingsView() {
               <Input type="number" min={0} max={100} value={form.default_vat_rate ?? 0} onChange={(e) => patch({ default_vat_rate: parseFloat(e.target.value) || 0 })} />
             </Field>
           </div>
+        </Section>
+
+        <Separator />
+
+        <Section title="Terms &amp; Conditions">
+          <Textarea
+            value={form.default_terms ?? ""}
+            onChange={(e) => patch({ default_terms: e.target.value })}
+            placeholder="Default terms included on every invoice — e.g. Payment within 30 days. Late payments subject to 1.5% monthly interest."
+            className="text-sm min-h-[120px] resize-y"
+          />
         </Section>
 
         <Separator />

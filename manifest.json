@@ -70,7 +70,8 @@
         { "name": "logo", "type": "text" },
         { "name": "default_currency", "type": "text" },
         { "name": "default_vat_rate", "type": "number" },
-        { "name": "invoice_prefix", "type": "text" }
+        { "name": "invoice_prefix", "type": "text" },
+        { "name": "default_terms", "type": "text" }
       ]
     },
     {

@@ -6,7 +6,7 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
 } from "@rootcx/ui";
 import { IconArrowLeft, IconDeviceFloppy, IconSend, IconNetwork, IconPrinter, IconDotsVertical } from "@tabler/icons-react";
-import type { Invoice, LineItem, InvoiceReference, PeppolRegistration, SellerSettings } from "../types";
+import type { Invoice, LineItem, PeppolRegistration, SellerSettings } from "../types";
 import {
   computeTotals, generateInvoiceNumber, todayISO, addDays,
 } from "../types";
@@ -81,10 +81,16 @@ export default function InvoiceDetailView({ invoiceId, onBack }: Props) {
       });
       setInitialized(true);
     }
-    if (isNew && !initialized) {
+    if (isNew && !initialized && sellerSettings !== undefined) {
+      setDraft((prev) => ({
+        ...prev,
+        currency: seller?.default_currency || "EUR",
+        invoice_number: generateInvoiceNumber(seller?.invoice_prefix || "INV"),
+        terms: "",
+      }));
       setInitialized(true);
     }
-  }, [existingInvoice, isNew, initialized]);
+  }, [existingInvoice, isNew, initialized, sellerSettings]);
 
   // Keep totals in sync
   const updateDraft = useCallback((patch: Partial<Invoice>) => {
@@ -234,7 +240,7 @@ export default function InvoiceDetailView({ invoiceId, onBack }: Props) {
             </TabsList>
 
             <TabsContent value="details" className="flex-1 overflow-y-auto min-h-0 mt-0 p-4">
-              <InvoiceDetailsTab draft={draft} onChange={updateDraft} />
+              <InvoiceDetailsTab draft={draft} onChange={updateDraft} sellerDefaultTerms={seller?.default_terms ?? ""} />
             </TabsContent>
 
             <TabsContent value="compliance" className="flex-1 overflow-y-auto min-h-0 mt-0 p-4">
