@@ -240,7 +240,7 @@ export default function InvoiceDetailView({ invoiceId, onBack }: Props) {
             </TabsList>
 
             <TabsContent value="details" className="flex-1 overflow-y-auto min-h-0 mt-0 p-4">
-              <InvoiceDetailsTab draft={draft} onChange={updateDraft} sellerDefaultTerms={seller?.default_terms ?? ""} />
+              <InvoiceDetailsTab draft={draft} onChange={updateDraft} sellerDefaultTerms={seller?.default_terms ?? ""} sellerDefaultNotes={seller?.default_notes ?? ""} />
             </TabsContent>
 
             <TabsContent value="compliance" className="flex-1 overflow-y-auto min-h-0 mt-0 p-4">

@@ -224,24 +224,26 @@ export default function InvoicePreview({ invoice }: Props) {
           )}
 
           {/* Notes & Terms */}
-          {(invoice.internal_notes || invoice.terms || seller?.default_terms) && (
-            <div className="border-t border-slate-100 pt-6 space-y-5">
-              {invoice.internal_notes && (
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1.5">Notes</p>
-                  <p className="text-sm text-slate-600 whitespace-pre-line">{invoice.internal_notes}</p>
-                </div>
-              )}
-              {(invoice.terms || seller?.default_terms) && (
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1.5">Terms &amp; Conditions</p>
-                  <p className="text-xs text-slate-500 whitespace-pre-line leading-relaxed">
-                    {invoice.terms || seller?.default_terms}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
+          {(() => {
+            const notes = invoice.internal_notes || seller?.default_notes;
+            const terms = invoice.terms || seller?.default_terms;
+            return (notes || terms) ? (
+              <div className="border-t border-slate-100 pt-6 space-y-5">
+                {notes && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1.5">Notes</p>
+                    <p className="text-sm text-slate-600 whitespace-pre-line">{notes}</p>
+                  </div>
+                )}
+                {terms && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1.5">Terms &amp; Conditions</p>
+                    <p className="text-xs text-slate-500 whitespace-pre-line leading-relaxed">{terms}</p>
+                  </div>
+                )}
+              </div>
+            ) : null;
+          })()}
         </div>
 
         {/* Footer */}

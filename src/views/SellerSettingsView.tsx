@@ -81,6 +81,7 @@ export default function SellerSettingsView() {
         default_vat_rate: form.default_vat_rate ?? 0,
         invoice_prefix: form.invoice_prefix ?? "INV",
         default_terms: form.default_terms ?? "",
+        default_notes: form.default_notes ?? "",
       };
       data?.[0]?.id ? await update(data[0].id, payload) : await create(payload);
       setLogoFile(null);
@@ -226,6 +227,17 @@ export default function SellerSettingsView() {
             onChange={(e) => patch({ default_terms: e.target.value })}
             placeholder="Default terms included on every invoice — e.g. Payment within 30 days. Late payments subject to 1.5% monthly interest."
             className="text-sm min-h-[120px] resize-y"
+          />
+        </Section>
+
+        <Separator />
+
+        <Section title="Notes">
+          <Textarea
+            value={form.default_notes ?? ""}
+            onChange={(e) => patch({ default_notes: e.target.value })}
+            placeholder="Default notes included on every invoice — e.g. Thank you for your business."
+            className="text-sm min-h-[88px] resize-y"
           />
         </Section>
 

@@ -50,7 +50,7 @@ const FIELD_DEFS: FieldDef[] = [
   { key: "client_country", label: "Client Country", type: "text"  },
   { key: "client_city",    label: "Client City",    type: "text"  },
   { key: "client_vat",     label: "Client VAT",     type: "text"  },
-  { key: "internal_notes", label: "Internal Notes", type: "text"  },
+  { key: "internal_notes", label: "Notes", type: "text"  },
   { key: "invoice_date",   label: "Invoice Date",   type: "date"  },
   { key: "due_date",       label: "Due Date",       type: "date"  },
   { key: "total",          label: "Total",          type: "number"},

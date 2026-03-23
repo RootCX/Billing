@@ -10,6 +10,44 @@ import {
   IconPlus, IconSearch, IconLink, IconLinkOff, IconUser, IconChevronDown,
   IconEdit, IconX, IconFileText,
 } from "@tabler/icons-react";
+
+interface OverrideFieldProps {
+  label: string;
+  value: string;
+  defaultValue: string;
+  placeholder: string;
+  emptyHint: string;
+  minH?: string;
+  onChange: (v: string) => void;
+}
+
+const OverrideField = ({ label, value, defaultValue, placeholder, emptyHint, minH = "min-h-[72px]", onChange }: OverrideFieldProps) => (
+  <div className="space-y-1 mb-3">
+    <div className="flex items-center justify-between">
+      <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
+      {value ? (
+        <button onClick={() => onChange("")} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-destructive transition-colors">
+          <IconX className="h-3 w-3" />Reset to default
+        </button>
+      ) : (
+        <button onClick={() => onChange(defaultValue || " ")} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors">
+          <IconEdit className="h-3 w-3" />Override for this invoice
+        </button>
+      )}
+    </div>
+    {value ? (
+      <Textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
+        className={cn("text-sm resize-none ring-1 ring-amber-400/60", minH)} autoFocus />
+    ) : (
+      <div className={cn("rounded-md border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground", !defaultValue && "italic")}>
+        {defaultValue
+          ? <span className="whitespace-pre-line line-clamp-3">{defaultValue}</span>
+          : <span className="flex items-center gap-1.5"><IconFileText className="h-3.5 w-3.5 shrink-0" />{emptyHint}</span>
+        }
+      </div>
+    )}
+  </div>
+);
 import type { Invoice, LineItem, InvoiceReference, Customer, Contact } from "../types";
 import {
   formatCurrency, applyCustomerToDraft, CUSTOMER_FORM_FIELDS, CONTACT_FORM_FIELDS,
@@ -55,9 +93,10 @@ interface Props {
   draft: Partial<Invoice>;
   onChange: (patch: Partial<Invoice>) => void;
   sellerDefaultTerms?: string;
+  sellerDefaultNotes?: string;
 }
 
-export default function InvoiceDetailsTab({ draft, onChange, sellerDefaultTerms = "" }: Props) {
+export default function InvoiceDetailsTab({ draft, onChange, sellerDefaultTerms = "", sellerDefaultNotes = "" }: Props) {
   const [lineItemDialogOpen, setLineItemDialogOpen] = useState(false);
   const [editingItem, setEditingItem]               = useState<LineItem | null>(null);
 
@@ -390,52 +429,24 @@ export default function InvoiceDetailsTab({ draft, onChange, sellerDefaultTerms 
 
       <SectionTitle>Notes &amp; Terms</SectionTitle>
 
-      <Field label="Internal Notes">
-        <Textarea value={draft.internal_notes ?? ""} onChange={(e) => onChange({ internal_notes: e.target.value })}
-          placeholder="Add internal notes (not shown on invoice)" className="text-sm min-h-[72px] resize-none" />
-      </Field>
+      <OverrideField
+        label="Notes"
+        value={draft.internal_notes ?? ""}
+        defaultValue={sellerDefaultNotes}
+        placeholder="Notes for this invoice…"
+        emptyHint="No default notes — configure in Seller Settings."
+        onChange={(v) => onChange({ internal_notes: v })}
+      />
 
-      {/* Terms & Conditions — override stored in invoice.terms; empty = use seller default */}
-      <div className="space-y-1 mb-3">
-        <div className="flex items-center justify-between">
-          <Label className="text-xs font-medium text-muted-foreground">Terms &amp; Conditions</Label>
-          {draft.terms ? (
-            <button
-              onClick={() => onChange({ terms: "" })}
-              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-destructive transition-colors"
-            >
-              <IconX className="h-3 w-3" />Reset to default
-            </button>
-          ) : (
-            <button
-              onClick={() => onChange({ terms: sellerDefaultTerms || " " })}
-              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <IconEdit className="h-3 w-3" />Override for this invoice
-            </button>
-          )}
-        </div>
-
-        {draft.terms ? (
-          <Textarea
-            value={draft.terms}
-            onChange={(e) => onChange({ terms: e.target.value })}
-            placeholder="Custom terms for this invoice…"
-            className="text-sm min-h-[88px] resize-none ring-1 ring-amber-400/60"
-            autoFocus
-          />
-        ) : (
-          <div className={cn(
-            "rounded-md border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground",
-            !sellerDefaultTerms && "italic",
-          )}>
-            {sellerDefaultTerms
-              ? <span className="whitespace-pre-line line-clamp-3">{sellerDefaultTerms}</span>
-              : <span className="flex items-center gap-1.5"><IconFileText className="h-3.5 w-3.5 shrink-0" />No default terms — configure in Seller Settings.</span>
-            }
-          </div>
-        )}
-      </div>
+      <OverrideField
+        label="Terms & Conditions"
+        value={draft.terms ?? ""}
+        defaultValue={sellerDefaultTerms}
+        placeholder="Custom terms for this invoice…"
+        emptyHint="No default terms — configure in Seller Settings."
+        minH="min-h-[88px]"
+        onChange={(v) => onChange({ terms: v })}
+      />
 
       {/* Dialogs */}
       <LineItemDialog
