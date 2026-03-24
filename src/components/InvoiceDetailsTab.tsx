@@ -85,13 +85,6 @@ const VAT_TREATMENTS = [
   { value: "intra_eu",       label: "Intra-EU" },
   { value: "export",         label: "Export" },
 ];
-const STATUS_OPTIONS = [
-  { value: "draft",     label: "Draft" },
-  { value: "sent",      label: "Sent" },
-  { value: "paid",      label: "Paid" },
-  { value: "overdue",   label: "Overdue" },
-  { value: "cancelled", label: "Cancelled" },
-];
 
 const SectionTitle = ({ children }: { children: React.ReactNode }) => (
   <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-3 mt-5 first:mt-0">
@@ -210,15 +203,6 @@ export default function InvoiceDetailsTab({ draft, onChange, sellerDefaultTerms 
       <Field label="Invoice Number">
         <Input value={draft.invoice_number ?? ""} onChange={(e) => onChange({ invoice_number: e.target.value })}
           className="h-8 text-sm font-mono" placeholder="INV-20260317-0001" />
-      </Field>
-
-      <Field label="Status">
-        <Select value={draft.status ?? "draft"} onValueChange={(v) => onChange({ status: v as any })}>
-          <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {STATUS_OPTIONS.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
       </Field>
 
       <Field label="Invoice Date">
