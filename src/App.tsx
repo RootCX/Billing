@@ -118,7 +118,7 @@ function Shell({ user, logout }: { user: any; logout: () => void }) {
 
       <AppShellMain>
         {view.type === "list"   && <InvoiceListView onOpenInvoice={(id) => setView({ type: "detail", invoiceId: id })} onNewInvoice={handleNewInvoice} />}
-        {view.type === "detail" && <InvoiceDetailView invoiceId={view.invoiceId} onBack={() => setView({ type: "list" })} />}
+        {view.type === "detail" && <InvoiceDetailView invoiceId={view.invoiceId} onBack={() => setView({ type: "list" })} onDeleted={() => setView({ type: "list" })} />}
         {view.type === "customers" && <CustomersView />}
         {view.type === "settings"  && <SellerSettingsView />}
         {view.type === "incoming"  && <IncomingInvoicesView />}

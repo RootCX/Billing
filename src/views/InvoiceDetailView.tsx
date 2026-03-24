@@ -7,8 +7,9 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   Tooltip, TooltipTrigger, TooltipContent, TooltipProvider,
+  ConfirmDialog,
 } from "@rootcx/ui";
-import { IconArrowLeft, IconDeviceFloppy, IconNetwork, IconPrinter, IconTag, IconDotsVertical } from "@tabler/icons-react";
+import { IconArrowLeft, IconDeviceFloppy, IconNetwork, IconPrinter, IconTag, IconDotsVertical, IconTrash } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type { Invoice, InvoiceStatus, LineItem, PeppolRegistration, SellerSettings } from "../types";
 import { computeTotals } from "../types";
@@ -56,25 +57,26 @@ function buildPayload(draft: Partial<Invoice>, status: InvoiceStatus, seller?: S
   };
 }
 
-interface Props { invoiceId: string; onBack: () => void; }
+interface Props { invoiceId: string; onBack: () => void; onDeleted?: () => void; }
 
-export default function InvoiceDetailView({ invoiceId, onBack }: Props) {
+export default function InvoiceDetailView({ invoiceId, onBack, onDeleted }: Props) {
   const { data: peppolRegs }     = useAppCollection<PeppolRegistration>(APP_ID, "peppol_registration");
   const { data: sellerSettings } = useAppCollection<SellerSettings>(APP_ID, "seller_settings");
   const seller       = sellerSettings?.[0];
   const peppolActive = peppolRegs?.[0]?.status === "active";
 
-  const { data: invoice, loading, error, update } = useAppRecord<Invoice>(APP_ID, "invoice", invoiceId);
+  const { data: invoice, loading, error, update, remove } = useAppRecord<Invoice>(APP_ID, "invoice", invoiceId);
 
-  // Peppol-sent invoices are the only ones locked for editing
+  // Peppol-sent invoices are locked — never editable or deletable
   const { data: peppolLogs } = useAppCollection(APP_ID, "peppol_send_log", { where: { invoice_id: invoiceId }, limit: 1 });
   const isEditable = (peppolLogs?.length ?? 0) === 0;
 
-  const [draft, setDraft]         = useState<Partial<Invoice>>({});
-  const [saving, setSaving]       = useState(false);
-  const [markAsOpen, setMarkAsOpen]       = useState(false);
+  const [draft, setDraft]               = useState<Partial<Invoice>>({});
+  const [saving, setSaving]             = useState(false);
+  const [markAsOpen, setMarkAsOpen]     = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<InvoiceStatus | "">("");
   const [peppolDialogOpen, setPeppolDialogOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen]     = useState(false);
 
   useEffect(() => {
     if (invoice) setDraft({ ...invoice, line_items: invoice.line_items ?? [], references: invoice.references ?? [] });
@@ -96,6 +98,16 @@ export default function InvoiceDetailView({ invoiceId, onBack }: Props) {
       toast.error(e.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      await remove();
+      toast.success("Invoice deleted");
+      (onDeleted ?? onBack)();
+    } catch (e: any) {
+      toast.error(e.message);
     }
   };
 
@@ -127,10 +139,13 @@ export default function InvoiceDetailView({ invoiceId, onBack }: Props) {
     ((draft.line_items ?? []).length === 0 ? 1 : 0);
 
   const showPeppol = isEditable && peppolActive && totalIssues === 0;
-  const peppolDisabledReason = !isEditable ? "Already sent via Peppol"
-    : !peppolActive ? "Peppol is not activated"
-    : totalIssues > 0 ? "Fix compliance issues first"
+  const peppolDisabledReason = !isEditable        ? "Already sent via Peppol"
+    : !peppolActive                               ? "Peppol is not activated"
+    : totalIssues > 0                             ? "Fix compliance issues first"
     : null;
+
+  // Only drafts can be deleted — sent/paid/overdue/cancelled are immutable records
+  const isDeletable = currentStatus === "draft";
 
   return (
     <TooltipProvider>
@@ -155,36 +170,44 @@ export default function InvoiceDetailView({ invoiceId, onBack }: Props) {
             </Button>
           )}
           <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" disabled={saving}>
-                  <IconDotsVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {isEditable && (
-                  <DropdownMenuItem onClick={() => { setSelectedStatus(""); setMarkAsOpen(true); }}>
-                    <IconTag className="h-4 w-4 mr-2" />Mark as…
-                  </DropdownMenuItem>
-                )}
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div>
-                      <DropdownMenuItem
-                        disabled={!showPeppol}
-                        onClick={() => showPeppol && setPeppolDialogOpen(true)}
-                      >
-                        <IconNetwork className="h-4 w-4 mr-2" />Send via Peppol
-                      </DropdownMenuItem>
-                    </div>
-                  </TooltipTrigger>
-                  {peppolDisabledReason && (
-                    <TooltipContent side="left">{peppolDisabledReason}</TooltipContent>
-                  )}
-                </Tooltip>
-                <DropdownMenuItem onClick={() => downloadInvoicePdf(draft as Invoice, seller)}>
-                  <IconPrinter className="h-4 w-4 mr-2" />Print / Export PDF
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" disabled={saving}>
+                <IconDotsVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {isEditable && (
+                <DropdownMenuItem onClick={() => { setSelectedStatus(""); setMarkAsOpen(true); }}>
+                  <IconTag className="h-4 w-4 mr-2" />Mark as…
                 </DropdownMenuItem>
-              </DropdownMenuContent>
+              )}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>
+                    <DropdownMenuItem
+                      disabled={!showPeppol}
+                      onClick={() => showPeppol && setPeppolDialogOpen(true)}
+                    >
+                      <IconNetwork className="h-4 w-4 mr-2" />Send via Peppol
+                    </DropdownMenuItem>
+                  </div>
+                </TooltipTrigger>
+                {peppolDisabledReason && (
+                  <TooltipContent side="left">{peppolDisabledReason}</TooltipContent>
+                )}
+              </Tooltip>
+              <DropdownMenuItem onClick={() => downloadInvoicePdf(draft as Invoice, seller)}>
+                <IconPrinter className="h-4 w-4 mr-2" />Print / Export PDF
+              </DropdownMenuItem>
+              {isDeletable && (
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  <IconTrash className="h-4 w-4 mr-2" />Delete Invoice
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </div>
@@ -254,6 +277,18 @@ export default function InvoiceDetailView({ invoiceId, onBack }: Props) {
             await update(buildPayload(draft, "sent", seller));
             setDraft((prev) => ({ ...prev, status: "sent" }));
           }}
+        />
+      )}
+
+      {isDeletable && (
+        <ConfirmDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          title="Delete invoice?"
+          description={`"${draft.invoice_number}" will be permanently deleted. This action cannot be undone.`}
+          confirmLabel="Delete"
+          onConfirm={handleDelete}
+          destructive
         />
       )}
     </div>
