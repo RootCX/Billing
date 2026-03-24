@@ -232,15 +232,6 @@ export const REFERENCE_TYPE_LABELS: Record<ReferenceType, string> = {
   custom: "Custom Field",
 };
 
-export function generateInvoiceNumber(prefix: string = "INV") {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  const rand = String(Math.floor(Math.random() * 9999) + 1).padStart(4, "0");
-  return `${prefix}-${y}${m}${d}-${rand}`;
-}
-
 export function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr);
   d.setDate(d.getDate() + days);
