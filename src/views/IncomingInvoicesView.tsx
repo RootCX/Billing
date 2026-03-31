@@ -96,7 +96,7 @@ function RejectDialog({
   const { data: regs } = useAppCollection<PeppolRegistration>(APP_ID, "peppol_registration");
   const { data: sellers } = useAppCollection<SellerSettings>(APP_ID, "seller_settings");
   const { update } = useAppCollection<IncomingDocument>("peppol", "incoming_documents");
-  const { call } = useIntegration(APP_ID, "peppol");
+  const { call } = useIntegration("peppol");
 
   const [reasonCode, setReasonCode] = useState("OTH");
   const [reason, setReason] = useState("");

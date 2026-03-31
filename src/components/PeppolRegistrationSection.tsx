@@ -16,7 +16,7 @@ interface Props {
 
 export default function PeppolRegistrationSection({ seller }: Props) {
   const { data: regs, loading: regLoading, create, update } = useAppCollection<PeppolRegistration>(APP_ID, "peppol_registration");
-  const { call } = useIntegration(APP_ID, "peppol");
+  const { call } = useIntegration("peppol");
 
   const [busy, setBusy] = useState(false);
   const [pollingHandle, setPollingHandle] = useState<ReturnType<typeof setInterval> | null>(null);

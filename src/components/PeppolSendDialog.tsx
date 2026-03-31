@@ -49,7 +49,7 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
   const { data: regs } = useAppCollection<PeppolRegistration>(APP_ID, "peppol_registration");
   const { data: sellers } = useAppCollection<SellerSettings>(APP_ID, "seller_settings");
   const { create: createLog } = useAppCollection<PeppolSendLog>(APP_ID, "peppol_send_log");
-  const { call } = useIntegration(APP_ID, "peppol");
+  const { call } = useIntegration("peppol");
 
   const reg = regs?.[0];
   const seller = sellers?.[0];
