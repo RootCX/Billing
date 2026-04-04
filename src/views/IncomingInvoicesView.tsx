@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useAppCollection, useIntegration, type WhereClause } from "@rootcx/sdk";
 import {
   PageHeader, DataTable, EmptyState, Badge, Button, toast,
@@ -188,6 +188,13 @@ function RejectDialog({
   );
 }
 
+
+
+function fmtAmt(v: number | undefined, currency: string): string {
+  if (v == null) return "—";
+  return new Intl.NumberFormat("fr-BE", { style: "currency", currency }).format(v);
+}
+
 // ─── IncomingDocumentPreview ──────────────────────────────────────────────────
 
 function IncomingDocumentPreview({ doc }: { doc: IncomingDocument }) {
@@ -200,8 +207,17 @@ function IncomingDocumentPreview({ doc }: { doc: IncomingDocument }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const currency = doc.currency || "EUR";
+  const { call } = useIntegration("peppol");
+  const [ubl, setUbl] = useState<any>(null);
+  useEffect(() => {
+    if (!doc.xml) return;
+    call("parse_ubl", { xml: doc.xml }).then(setUbl).catch(() => setUbl(null));
+  }, [doc.xml, call]);
+  const currency = ubl?.currencyCode || doc.currency || "EUR";
   const s = STATUS_STYLES[doc.status] ?? STATUS_STYLES.read;
+
+  // Prefer UBL-parsed totals over doc.amount (which may store PayableAmount=0)
+  const totalAmount = ubl?.monetaryTotal?.taxInclusiveAmount ?? ubl?.monetaryTotal?.payableAmount ?? doc.amount;
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -209,25 +225,52 @@ function IncomingDocumentPreview({ doc }: { doc: IncomingDocument }) {
 
         {/* Header band */}
         <div className="bg-white border-b border-slate-200 px-10 py-8">
-          <div className="flex items-start justify-between">
-            {/* Sender info */}
+          <div className="flex items-start justify-between gap-6">
+            {/* Supplier info from UBL */}
             <div>
-              <p className="text-xl font-bold tracking-tight text-slate-900">{doc.sender_name || "Unknown Sender"}</p>
-              {doc.sender_vat && (
-                <p className="text-slate-500 text-xs mt-0.5">VAT: {doc.sender_vat}</p>
+              <p className="text-xl font-bold tracking-tight text-slate-900">
+                {ubl?.seller?.name || doc.sender_name || "Unknown Sender"}
+              </p>
+              {(ubl?.seller?.address?.street || ubl?.seller?.address?.city) && (
+                <p className="text-slate-500 text-xs mt-0.5">
+                  {[ubl.seller.address.street, ubl.seller.address.postalZone ? `${ubl.seller.address.postalZone} ${ubl.seller.address.city}` : ubl.seller.address.city]
+                    .filter(Boolean).join(", ")}
+                  {ubl.seller.address.countryCode && `, ${ubl.seller.address.countryCode === "BE" ? "Belgium" : ubl.seller.address.countryCode}`}
+                </p>
               )}
-              {doc.sender_peppol_id && (
-                <p className="font-mono text-slate-400 text-xs mt-1">Peppol: {doc.sender_peppol_id}</p>
+              {(ubl?.seller?.vatNumber || doc.sender_vat) && (
+                <p className="text-slate-500 text-xs mt-0.5">nº TVA/BTW: {ubl?.seller?.vatNumber || doc.sender_vat}</p>
+              )}
+              {ubl?.seller?.companyId && (
+                <p className="text-slate-500 text-xs">KBO/CBE: {ubl.seller.companyId.replace(/^0+/, "")}</p>
+              )}
+              {ubl?.seller?.contact?.email && (
+                <p className="text-slate-400 text-xs mt-1">{ubl.seller.contact.email}</p>
+              )}
+              {ubl?.seller?.contact?.name && (
+                <p className="text-slate-400 text-xs">{ubl.seller.contact.name}</p>
+              )}
+              {ubl?.seller?.contact?.phone && (
+                <p className="text-slate-400 text-xs">{ubl.seller.contact.phone}</p>
               )}
             </div>
 
             {/* Document identity */}
-            <div className="text-right">
+            <div className="text-right shrink-0">
               <p className="text-2xl font-black tracking-tight mb-1 text-slate-900">
                 {doc.document_type === "CreditNote" ? "CREDIT NOTE" : "INVOICE"}
               </p>
-              <p className="font-mono text-slate-500 text-sm">{doc.document_number || "—"}</p>
-              <span className={cn("inline-flex items-center gap-1.5 mt-2 px-2.5 py-0.5 rounded-full text-xs font-bold", s.bg, s.text)}>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-0.5">Invoice number</p>
+              <p className="font-mono text-slate-700 text-sm font-semibold">{ubl?.id || doc.document_number || "—"}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mt-2 mb-0.5">Date</p>
+              <p className="text-sm text-slate-700">{ubl?.issueDate || doc.issue_date || "—"}</p>
+              {(ubl?.dueDate || doc.due_date) && (
+                <>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mt-2 mb-0.5">Due date</p>
+                  <p className="text-sm text-slate-700">{ubl?.dueDate || doc.due_date}</p>
+                </>
+              )}
+              <span className={cn("inline-flex items-center gap-1.5 mt-3 px-2.5 py-0.5 rounded-full text-xs font-bold", s.bg, s.text)}>
                 <span className={cn("h-1.5 w-1.5 rounded-full", s.dot)} />
                 {STATUSES.find(x => x.value === doc.status)?.label?.toUpperCase() ?? doc.status?.toUpperCase()}
               </span>
@@ -237,79 +280,205 @@ function IncomingDocumentPreview({ doc }: { doc: IncomingDocument }) {
 
         <div className="px-10 py-8 space-y-8">
 
-          {/* Dates row */}
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-0.5">Issue Date</p>
-              <p className="text-sm font-medium text-slate-800">{doc.issue_date ? formatDate(doc.issue_date) : "—"}</p>
-            </div>
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-0.5">Due Date</p>
-              <p className="text-sm font-medium text-slate-800">{doc.due_date ? formatDate(doc.due_date) : "—"}</p>
-            </div>
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-0.5">Received</p>
-              <p className="text-sm font-medium text-slate-800">
-                {new Date(doc.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-              </p>
-            </div>
-          </div>
-
           {/* From / To */}
           <div className="grid grid-cols-2 gap-8">
+            {/* Supplier (From) */}
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-2">From</p>
-              <p className="font-semibold text-slate-900">{doc.sender_name || "—"}</p>
-              {doc.sender_vat && <p className="text-slate-500 text-xs mt-0.5">VAT: {doc.sender_vat}</p>}
-              {doc.sender_peppol_id && (
-                <p className="font-mono text-slate-400 text-xs mt-1">{doc.sender_peppol_id}</p>
+              <p className="font-semibold text-slate-900">{ubl?.seller?.name || doc.sender_name || "—"}</p>
+              {ubl?.seller?.address?.street && <p className="text-slate-600 text-sm">{ubl.seller.address.street}</p>}
+              {(ubl?.seller?.address?.postalZone || ubl?.seller?.address?.city) && (
+                <p className="text-slate-600 text-sm">
+                  {[ubl.seller.address.postalZone, ubl.seller.address.city].filter(Boolean).join(" ")}
+                </p>
+              )}
+              {ubl?.seller?.address?.countryCode && (
+                <p className="text-slate-500 text-sm">
+                  {ubl.seller.address.countryCode === "BE" ? "Belgium" : ubl.seller.address.countryCode}
+                </p>
+              )}
+              {(ubl?.seller?.vatNumber || doc.sender_vat) && (
+                <p className="text-slate-400 text-xs mt-1">nº TVA/BTW: {ubl?.seller?.vatNumber || doc.sender_vat}</p>
+              )}
+              {ubl?.seller?.companyId && (
+                <p className="text-slate-400 text-xs">KBO/CBE: {ubl.seller.companyId.replace(/^0+/, "")}</p>
               )}
             </div>
+
+            {/* Customer (To) */}
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-2">To</p>
-              <p className="font-semibold text-slate-900">{doc.receiver_name || "—"}</p>
-              {doc.receiver_peppol_id && (
-                <p className="font-mono text-slate-400 text-xs mt-1">{doc.receiver_peppol_id}</p>
+              <p className="font-semibold text-slate-900">{ubl?.buyer?.name || doc.receiver_name || "—"}</p>
+              {ubl?.buyer?.address?.street && <p className="text-slate-600 text-sm">{ubl.buyer.address.street}</p>}
+              {(ubl?.buyer?.address?.postalZone || ubl?.buyer?.address?.city) && (
+                <p className="text-slate-600 text-sm">
+                  {[ubl.buyer.address.postalZone, ubl.buyer.address.city].filter(Boolean).join(" ")}
+                </p>
+              )}
+              {ubl?.buyer?.address?.countryCode && (
+                <p className="text-slate-500 text-sm">
+                  {ubl.buyer.address.countryCode === "BE" ? "Belgium" : ubl.buyer.address.countryCode}
+                </p>
+              )}
+              {ubl?.buyer?.vatNumber && (
+                <p className="text-slate-400 text-xs mt-1">nº TVA/BTW: {ubl.buyer.vatNumber}</p>
+              )}
+              {ubl?.buyer?.companyId && (
+                <p className="text-slate-400 text-xs">KBO/CBE: {ubl.buyer.companyId.replace(/^0+/, "")}</p>
               )}
             </div>
           </div>
 
-          {/* Amount summary */}
-          <div>
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="border-b-2 border-slate-900">
-                  <th className="text-left py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Description</th>
-                  <th className="text-right py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b border-slate-100">
-                  <td className="py-3 text-slate-700">
-                    {doc.document_type === "CreditNote" ? "Credit Note" : "Invoice"}{" "}
-                    {doc.document_number && <span className="font-mono text-slate-400">{doc.document_number}</span>}
-                  </td>
-                  <td className="py-3 text-right font-semibold text-slate-800 tabular-nums">
-                    {doc.amount != null ? formatCurrency(doc.amount, currency) : "—"}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          {/* Delivery info */}
+          {(ubl?.delivery?.actualDeliveryDate || ubl?.delivery?.address || ubl?.delivery?.partyName) && (
+            <div className="bg-slate-50 rounded-md px-4 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-2">Delivery information</p>
+              <div className="text-sm text-slate-600 space-y-0.5">
+                {ubl.delivery.actualDeliveryDate && <p>Delivery date: {ubl.delivery.actualDeliveryDate}</p>}
+                {ubl.delivery.partyName && <p className="font-medium text-slate-800">{ubl.delivery.partyName}</p>}
+                {ubl.delivery.address?.street && <p>{ubl.delivery.address.street}</p>}
+                {(ubl.delivery.address?.postalZone || ubl.delivery.address?.city) && (
+                  <p>{[ubl.delivery.address.postalZone, ubl.delivery.address.city].filter(Boolean).join(" ")}</p>
+                )}
+                {ubl.delivery.address?.countryCode && (
+                  <p>{ubl.delivery.address.countryCode === "BE" ? "Belgium" : ubl.delivery.address.countryCode}</p>
+                )}
+              </div>
+            </div>
+          )}
 
-          {/* Total */}
+          {/* References */}
+          {(ubl?.despatchReference || ubl?.buyerReference) && (
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              {ubl.despatchReference && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-0.5">Despatch number</p>
+                  <p className="font-mono text-slate-700">{ubl.despatchReference}</p>
+                </div>
+              )}
+              {ubl.buyerReference && (
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-0.5">Buyer Reference</p>
+                  <p className="font-mono text-slate-700">{ubl.buyerReference}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Line items */}
+          {ubl && ubl.lines.length > 0 ? (
+            <div>
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b-2 border-slate-900">
+                    <th className="text-left py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Product or service</th>
+                    <th className="text-right py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500 w-16">Qty</th>
+                    <th className="text-right py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500 w-28">Unit price</th>
+                    <th className="text-right py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500 w-28">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ubl.lines.map((line: any) => (
+                    <tr key={line.id} className="border-b border-slate-100">
+                      <td className="py-3 pr-4">
+                        <p className="text-slate-800 font-medium">{line.description || "—"}</p>
+                        {line.sellersItemId && (
+                          <p className="text-xs text-slate-400 mt-0.5">Seller product ID: {line.sellersItemId}</p>
+                        )}
+                      </td>
+                      <td className="py-3 text-right text-slate-600 tabular-nums">
+                        {line.quantity} {line.unitCode || "unit"}
+                      </td>
+                      <td className="py-3 text-right text-slate-600 tabular-nums">
+                        {fmtAmt(line.priceAmount, currency)}
+                      </td>
+                      <td className="py-3 text-right font-semibold text-slate-800 tabular-nums">
+                        {fmtAmt(line.lineAmount, currency)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            /* Fallback: single-line summary */
+            <div>
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b-2 border-slate-900">
+                    <th className="text-left py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Description</th>
+                    <th className="text-right py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-slate-100">
+                    <td className="py-3 text-slate-700">
+                      {doc.document_type === "CreditNote" ? "Credit Note" : "Invoice"}{" "}
+                      {doc.document_number && <span className="font-mono text-slate-400">{doc.document_number}</span>}
+                    </td>
+                    <td className="py-3 text-right font-semibold text-slate-800 tabular-nums">
+                      {totalAmount != null ? fmtAmt(totalAmount, currency) : "—"}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Totals */}
           <div className="flex justify-end">
-            <div className="w-64 space-y-2">
+            <div className="w-64 space-y-1.5 text-sm">
+              {ubl?.monetaryTotal?.lineExtensionAmount != null && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Subtotal</span>
+                  <span className="tabular-nums">{fmtAmt(ubl.monetaryTotal.lineExtensionAmount, currency)}</span>
+                </div>
+              )}
+              {ubl?.taxTotal?.taxAmount != null && (
+                <div className="flex justify-between text-slate-600">
+                  <span>VAT {ubl.taxTotal.subtotals?.[0]?.percent != null ? `${ubl.taxTotal.subtotals[0].percent.toLocaleString("fr-BE")}%` : ""}</span>
+                  <span className="tabular-nums">{fmtAmt(ubl.taxTotal.taxAmount, currency)}</span>
+                </div>
+              )}
               <div className="border-t-2 border-slate-900 pt-2 flex justify-between font-bold text-slate-900">
-                <span>Total ({currency})</span>
+                <span>Total amount</span>
                 <span className="tabular-nums text-lg">
-                  {doc.amount != null ? formatCurrency(doc.amount, currency) : "—"}
+                  {fmtAmt(ubl?.monetaryTotal?.taxInclusiveAmount ?? ubl?.monetaryTotal?.payableAmount ?? totalAmount, currency)}
                 </span>
               </div>
+              {ubl?.monetaryTotal?.prepaidAmount != null && ubl.monetaryTotal.prepaidAmount > 0 && (
+                <div className="flex justify-between text-slate-500 text-xs">
+                  <span>Already paid</span>
+                  <span className="tabular-nums">−{fmtAmt(ubl.monetaryTotal.prepaidAmount, currency)}</span>
+                </div>
+              )}
+              {ubl?.monetaryTotal?.payableAmount != null && ubl?.monetaryTotal?.prepaidAmount != null && ubl.monetaryTotal.prepaidAmount > 0 && (
+                <div className="flex justify-between font-semibold text-slate-800 border-t border-slate-200 pt-1.5 mt-1">
+                  <span>Balance due</span>
+                  <span className="tabular-nums">{fmtAmt(ubl.monetaryTotal.payableAmount, currency)}</span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* References */}
+          {/* Payment info */}
+          {(ubl?.paymentMeans?.[0]?.paymentId || ubl?.paymentMeans?.[0]?.iban) && (
+            <div className="bg-slate-50 rounded-md px-4 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-2">Payment</p>
+              <div className="text-sm text-slate-600 space-y-0.5">
+                {ubl.paymentMeans[0].paymentId && <p>Remittance information: <span className="font-mono">{ubl.paymentMeans[0].paymentId}</span></p>}
+                {ubl.paymentMeans[0].iban && (
+                  <p>
+                    {ubl.paymentMeans[0].accountName && <span className="font-medium text-slate-800 mr-2">{ubl.paymentMeans[0].accountName}</span>}
+                    <span className="font-mono">{ubl.paymentMeans[0].iban}</span>
+                    {ubl.paymentMeans[0].bic && <span className="text-slate-400 ml-2">({ubl.paymentMeans[0].bic})</span>}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Technical References */}
           {(doc.document_ulid || doc.as4_message_id || doc.instance_identifier) && (
             <div className="border-t border-slate-100 pt-6">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-2">Technical References</p>
@@ -368,7 +537,7 @@ function IncomingDocumentPreview({ doc }: { doc: IncomingDocument }) {
           <p className="text-center text-xs text-slate-400">
             Received via Peppol network
             {doc.document_type ? ` · ${doc.document_type}` : ""}
-            {doc.currency ? ` · ${doc.currency}` : ""}
+            {currency ? ` · ${currency}` : ""}
           </p>
         </div>
       </div>
