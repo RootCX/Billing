@@ -3,19 +3,89 @@ import { useAppCollection, type WhereClause } from "@rootcx/sdk";
 import {
   PageHeader, DataTable, EmptyState, FormDialog, ConfirmDialog, Button,
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+  DialogFooter, Input, Label, Textarea,
   Badge, Separator, toast, type SortingState,
 } from "@rootcx/ui";
-import {
-  IconPlus, IconEdit, IconTrash, IconUsers, IconUser, IconChevronDown, IconChevronUp,
-  IconStar, IconStarFilled,
-} from "@tabler/icons-react";
+import { IconPlus, IconEdit, IconTrash, IconUsers, IconUser, IconStar, IconStarFilled } from "@tabler/icons-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import type { Customer, Contact } from "../types";
-import { CUSTOMER_FORM_FIELDS, CONTACT_FORM_FIELDS, contactDisplayName } from "../types";
-import {
-  FilterBar, conditionToWhereClause,
-  type Condition, type FieldDef,
-} from "../components/FilterSystem";
+import { CONTACT_FORM_FIELDS, contactDisplayName } from "../types";
+import { FilterBar, conditionToWhereClause, type Condition, type FieldDef } from "../components/FilterSystem";
+import { CountrySelect, countryName } from "../components/CountrySelect";
+
+// ─── Customer form dialog ─────────────────────────────────────────────────────
+
+type CustomerFields = Pick<Customer, "company_name" | "vat_number" | "street" | "postal_code" | "city" | "country_code" | "notes">;
+
+const F = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div className="space-y-1">
+    <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
+    {children}
+  </div>
+);
+
+function CustomerFormDialog({ open, onOpenChange, title, description, defaultValues, onSubmit, submitLabel = "Save" }: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  title: string;
+  description?: string;
+  defaultValues?: Partial<CustomerFields>;
+  onSubmit: (values: CustomerFields) => Promise<void>;
+  submitLabel?: string;
+}) {
+  const [form, setForm]     = useState<Partial<CustomerFields>>({});
+  const [busy, setBusy]     = useState(false);
+  const patch               = (p: Partial<CustomerFields>) => setForm((f) => ({ ...f, ...p }));
+  const get                 = <K extends keyof CustomerFields>(k: K): string => (form[k] ?? defaultValues?.[k] ?? "") as string;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try { await onSubmit({ ...defaultValues, ...form } as CustomerFields); setForm({}); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) setForm({}); onOpenChange(v); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          {description && <p className="text-sm text-muted-foreground">{description}</p>}
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <F label="Company Name *">
+            <Input value={get("company_name")} onChange={(e) => patch({ company_name: e.target.value })} required className="h-8 text-sm" placeholder="Acme Corp" />
+          </F>
+          <F label="VAT Number">
+            <Input value={get("vat_number")} onChange={(e) => patch({ vat_number: e.target.value })} className="h-8 text-sm" placeholder="BE0123456789" />
+          </F>
+          <F label="Street">
+            <Input value={get("street")} onChange={(e) => patch({ street: e.target.value })} className="h-8 text-sm" placeholder="123 Main St" />
+          </F>
+          <div className="grid grid-cols-2 gap-2">
+            <F label="Postal Code">
+              <Input value={get("postal_code")} onChange={(e) => patch({ postal_code: e.target.value })} className="h-8 text-sm" placeholder="1000" />
+            </F>
+            <F label="City">
+              <Input value={get("city")} onChange={(e) => patch({ city: e.target.value })} className="h-8 text-sm" placeholder="Brussels" />
+            </F>
+          </div>
+          <F label="Country">
+            <CountrySelect value={get("country_code")} onChange={(code) => patch({ country_code: code })} />
+          </F>
+          <F label="Notes">
+            <Textarea value={get("notes")} onChange={(e) => patch({ notes: e.target.value })} className="text-sm min-h-[60px]" placeholder="Optional notes…" />
+          </F>
+          <DialogFooter className="pt-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" disabled={busy}>{busy ? "Saving…" : submitLabel}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 
 const APP_ID   = "billing";
 const PAGE_SIZE = 20;
@@ -24,7 +94,7 @@ const FIELD_DEFS: FieldDef[] = [
   { key: "company_name",  label: "Company",     type: "text" },
   { key: "vat_number",    label: "VAT Number",  type: "text" },
   { key: "city",          label: "City",        type: "text" },
-  { key: "country_code",  label: "Country Code",type: "text" },
+  { key: "country_code",  label: "Country",     type: "text" },
   { key: "postal_code",   label: "Postal Code", type: "text" },
 ];
 
@@ -313,7 +383,7 @@ export default function CustomersView() {
           <DialogHeader>
             <DialogTitle>{detailCustomer?.company_name}</DialogTitle>
             <DialogDescription>
-              {[detailCustomer?.city, detailCustomer?.country_code].filter(Boolean).join(", ") || "Customer details"}
+              {[detailCustomer?.city, detailCustomer?.country_code ? countryName(detailCustomer.country_code) : undefined].filter(Boolean).join(", ") || "Customer details"}
             </DialogDescription>
           </DialogHeader>
 
@@ -349,23 +419,21 @@ export default function CustomersView() {
         </DialogContent>
       </Dialog>
 
-      <FormDialog
+      <CustomerFormDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
         title="New Customer"
         description="Add a new company to your directory."
-        fields={CUSTOMER_FORM_FIELDS}
         onSubmit={handleCreate}
         submitLabel="Create Customer"
       />
 
-      <FormDialog
+      <CustomerFormDialog
         open={!!editCustomer}
         onOpenChange={(open) => { if (!open) setEditCustomer(null); }}
         title="Edit Customer"
         description="Update company information."
-        fields={CUSTOMER_FORM_FIELDS}
-        defaultValues={editCustomer ? (editCustomer as unknown as Record<string, unknown>) : {}}
+        defaultValues={editCustomer ?? undefined}
         onSubmit={handleUpdate}
         submitLabel="Save Changes"
       />

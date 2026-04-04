@@ -10,6 +10,7 @@ import {
   IconPlus, IconSearch, IconLink, IconLinkOff, IconUser, IconChevronDown,
   IconEdit, IconX, IconFileText, IconTrash,
 } from "@tabler/icons-react";
+import { CountrySelect } from "./CountrySelect";
 
 // sentinel: field explicitly cleared — nothing printed on invoice
 export const FIELD_NONE = "__none__";
@@ -373,9 +374,11 @@ export default function InvoiceDetailsTab({ draft, onChange, sellerDefaultTerms 
         </div>
       </div>
 
-      <Field label="Country Code">
-        <Input value={draft.client_country ?? ""} onChange={(e) => onChange({ client_country: e.target.value })}
-          className="h-8 text-sm" placeholder="BE" maxLength={2} />
+      <Field label="Country">
+        <CountrySelect
+          value={draft.client_country ?? ""}
+          onChange={(code) => onChange({ client_country: code })}
+        />
       </Field>
 
       <Field label="Contact Name">

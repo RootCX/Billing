@@ -5,6 +5,7 @@ import { IconDeviceFloppy, IconUpload, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type { SellerSettings } from "../types";
 import PeppolRegistrationSection from "../components/PeppolRegistrationSection";
+import { CountrySelect } from "../components/CountrySelect";
 
 const APP_ID = "billing";
 
@@ -172,8 +173,11 @@ export default function SellerSettingsView() {
               </Field>
             </div>
           </div>
-          <Field label="Country Code">
-            <Input value={form.country_code ?? ""} onChange={(e) => patch({ country_code: e.target.value })} placeholder="BE" maxLength={2} className="max-w-[80px]" />
+          <Field label="Country">
+            <CountrySelect
+              value={form.country_code ?? ""}
+              onChange={(code) => patch({ country_code: code })}
+            />
           </Field>
         </Section>
 
