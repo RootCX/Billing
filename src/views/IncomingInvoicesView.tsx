@@ -213,7 +213,7 @@ function IncomingDocumentPreview({ doc }: { doc: IncomingDocument }) {
     if (!doc.xml) return;
     call("parse_ubl", { xml: doc.xml }).then(setUbl).catch(() => setUbl(null));
   }, [doc.xml, call]);
-  const currency = ubl?.currencyCode || doc.currency || "EUR";
+  const currency = ubl?.currency || doc.currency || "EUR";
   const s = STATUS_STYLES[doc.status] ?? STATUS_STYLES.read;
 
   // Prefer UBL-parsed totals over doc.amount (which may store PayableAmount=0)
@@ -261,7 +261,7 @@ function IncomingDocumentPreview({ doc }: { doc: IncomingDocument }) {
                 {doc.document_type === "CreditNote" ? "CREDIT NOTE" : "INVOICE"}
               </p>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-0.5">Invoice number</p>
-              <p className="font-mono text-slate-700 text-sm font-semibold">{ubl?.id || doc.document_number || "—"}</p>
+              <p className="font-mono text-slate-700 text-sm font-semibold">{ubl?.documentNumber || doc.document_number || "—"}</p>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mt-2 mb-0.5">Date</p>
               <p className="text-sm text-slate-700">{ubl?.issueDate || doc.issue_date || "—"}</p>
               {(ubl?.dueDate || doc.due_date) && (
@@ -330,11 +330,11 @@ function IncomingDocumentPreview({ doc }: { doc: IncomingDocument }) {
           </div>
 
           {/* Delivery info */}
-          {(ubl?.delivery?.actualDeliveryDate || ubl?.delivery?.address || ubl?.delivery?.partyName) && (
+          {(ubl?.delivery?.date || ubl?.delivery?.address || ubl?.delivery?.partyName) && (
             <div className="bg-slate-50 rounded-md px-4 py-3">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-2">Delivery information</p>
               <div className="text-sm text-slate-600 space-y-0.5">
-                {ubl.delivery.actualDeliveryDate && <p>Delivery date: {ubl.delivery.actualDeliveryDate}</p>}
+                {ubl.delivery.date && <p>Delivery date: {ubl.delivery.date}</p>}
                 {ubl.delivery.partyName && <p className="font-medium text-slate-800">{ubl.delivery.partyName}</p>}
                 {ubl.delivery.address?.street && <p>{ubl.delivery.address.street}</p>}
                 {(ubl.delivery.address?.postalZone || ubl.delivery.address?.city) && (
@@ -348,12 +348,12 @@ function IncomingDocumentPreview({ doc }: { doc: IncomingDocument }) {
           )}
 
           {/* References */}
-          {(ubl?.despatchReference || ubl?.buyerReference) && (
+          {(ubl?.despatchDocumentReference || ubl?.buyerReference) && (
             <div className="grid grid-cols-2 gap-4 text-sm">
-              {ubl.despatchReference && (
+              {ubl.despatchDocumentReference && (
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-0.5">Despatch number</p>
-                  <p className="font-mono text-slate-700">{ubl.despatchReference}</p>
+                  <p className="font-mono text-slate-700">{ubl.despatchDocumentReference}</p>
                 </div>
               )}
               {ubl.buyerReference && (
