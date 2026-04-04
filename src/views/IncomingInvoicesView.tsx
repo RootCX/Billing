@@ -390,7 +390,7 @@ function IncomingDocumentPreview({ doc }: { doc: IncomingDocument }) {
                         {line.quantity} {line.unitCode || "unit"}
                       </td>
                       <td className="py-3 text-right text-slate-600 tabular-nums">
-                        {fmtAmt(line.priceAmount, currency)}
+                        {fmtAmt(line.unitPrice, currency)}
                       </td>
                       <td className="py-3 text-right font-semibold text-slate-800 tabular-nums">
                         {fmtAmt(line.lineAmount, currency)}
