@@ -6,6 +6,7 @@ import {
   IconRefresh, IconPlugConnected, IconWifi,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { cleanVat } from "@/lib/vat";
 import type { PeppolRegistration, SellerSettings } from "../types";
 
 const APP_ID = "billing";
@@ -43,7 +44,7 @@ export default function PeppolRegistrationSection({ seller }: Props) {
     setBusy(true);
     try {
       const regResult = await call("register_participant", {
-        vatNumber: seller.vat_number,
+        vatNumber: cleanVat(seller.vat_number),
         companyName: seller.company_name,
         countryCode: seller.country_code ?? "BE",
       }) as { peppolId: string; dokapiUlid: string; status: string };

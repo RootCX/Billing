@@ -10,6 +10,7 @@ import {
   IconSend, IconNetwork, IconFileText,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { cleanVat, deriveReceiverPeppolId } from "@/lib/vat";
 import type { Invoice, PeppolRegistration, PeppolSendLog, SellerSettings, LineItem, InvoiceReference } from "../types";
 import { formatCurrency } from "../types";
 
@@ -23,21 +24,6 @@ interface Props {
 }
 
 type Step = "confirm" | "sending" | "success" | "error";
-
-function deriveReceiverPeppolId(vatNumber: string, countryCode: string): string {
-  // Belgian KBO scheme: 0208
-  // EU VAT scheme: 9925
-  const icdMap: Record<string, string> = {
-    BE: "0208", NL: "0106", FR: "0009", DE: "0204", IT: "0211",
-    SE: "0007", NO: "0192", DK: "0184", FI: "0037", AT: "9915",
-    LU: "9938", PT: "9925", ES: "9920", PL: "9923",
-  };
-  const code = countryCode?.toUpperCase() ?? "BE";
-  const icd = icdMap[code] ?? "9925";
-  // Strip country prefix from VAT if present (e.g. BE0123 → 0123)
-  const stripped = vatNumber.replace(/^[A-Za-z]{2}/, "");
-  return `${icd}:${stripped}`;
-}
 
 export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }: Props) {
   const [step, setStep] = useState<Step>("confirm");
@@ -87,7 +73,7 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
         supplier: {
           peppolId: senderPeppolId,
           name: seller?.company_name ?? "",
-          vatNumber: seller?.vat_number ?? "",
+          vatNumber: cleanVat(seller?.vat_number),
           street: seller?.street ?? "",
           city: seller?.city ?? "",
           postalCode: seller?.postal_code ?? "",
@@ -96,7 +82,7 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
         customer: {
           peppolId: receiverPeppolId,
           name: invoice.client_company ?? "",
-          vatNumber: invoice.client_vat ?? "",
+          vatNumber: cleanVat(invoice.client_vat),
           street: invoice.client_street ?? "",
           city: invoice.client_city ?? "",
           postalCode: invoice.client_postal ?? "",
