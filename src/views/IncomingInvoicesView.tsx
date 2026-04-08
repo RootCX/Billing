@@ -551,7 +551,7 @@ export default function IncomingInvoicesView() {
   const [conditions, setConditions] = useState<Condition[]>([]);
   const [search, setSearch]         = useState("");
   const [pageIndex, setPageIndex]   = useState(0);
-  const [orderBy, setOrderBy]       = useState("created_at");
+  const [orderBy, setOrderBy]       = useState("issue_date");
   const [order, setOrder]           = useState<"asc" | "desc">("desc");
   const [selected, setSelected]     = useState<IncomingDocument | null>(null);
 
@@ -742,7 +742,7 @@ export default function IncomingInvoicesView() {
         onPaginationChange={({ pageIndex: pi }) => setPageIndex(pi)}
         onSortingChange={(s: SortingState) => {
           if (s[0]) { setOrderBy(s[0].id); setOrder(s[0].desc ? "desc" : "asc"); }
-          else      { setOrderBy("created_at"); setOrder("desc"); }
+          else      { setOrderBy("issue_date"); setOrder("desc"); }
           setPageIndex(0);
         }}
         onRowClick={row => setSelected(row)}
