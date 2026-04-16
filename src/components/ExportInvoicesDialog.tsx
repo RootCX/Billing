@@ -10,20 +10,44 @@ import type { InvoiceExport } from "../types";
 const APP_ID = "billing";
 const POLL_MS = 1500;
 
+interface ExportConfig {
+  rpcName: string;
+  entityName: string;
+  label: string;
+  zipPrefix: string;
+}
+
+const INVOICE_EXPORT: ExportConfig = {
+  rpcName: "start_export",
+  entityName: "invoice_export",
+  label: "invoice",
+  zipPrefix: "invoices",
+};
+
+const INCOMING_EXPORT: ExportConfig = {
+  rpcName: "start_incoming_export",
+  entityName: "incoming_export",
+  label: "document",
+  zipPrefix: "incoming",
+};
+
+export { INVOICE_EXPORT, INCOMING_EXPORT };
+
 interface Props {
   exportId: string | null;
   onClose: () => void;
+  config?: ExportConfig;
 }
 
-export default function ExportInvoicesDialog({ exportId, onClose }: Props) {
-  const { data: exportRec, refetch } = useAppRecord<InvoiceExport>(APP_ID, "invoice_export", exportId);
+export default function ExportInvoicesDialog({ exportId, onClose, config = INVOICE_EXPORT }: Props) {
+  const { data: exportRec, refetch } = useAppRecord<InvoiceExport>(APP_ID, config.entityName, exportId);
   const downloadedRef = useRef<string | null>(null);
 
   const status = exportRec?.status ?? "pending";
   const generated = exportRec?.generated_count ?? 0;
   const total = exportRec?.total_count ?? 0;
   const fileData = exportRec?.file_data ?? "";
-  const fileName = exportRec?.file_name || "invoices.zip";
+  const fileName = exportRec?.file_name || `${config.zipPrefix}.zip`;
   const fileSize = exportRec?.file_size ?? 0;
   const isDone = status === "completed";
   const isFailed = status === "failed";
@@ -40,21 +64,21 @@ export default function ExportInvoicesDialog({ exportId, onClose }: Props) {
     if (isDone && fileData) {
       downloadedRef.current = exportRec.id;
       triggerDownload(fileData, fileName);
-      toast.success(`Exported ${generated} invoices`);
+      toast.success(`Exported ${generated} ${config.label}${generated !== 1 ? "s" : ""}`);
     } else if (isFailed) {
       downloadedRef.current = exportRec.id;
       toast.error(exportRec.error_message || "Export failed");
     }
-  }, [exportRec, isDone, isFailed, fileData, fileName, generated]);
+  }, [exportRec, isDone, isFailed, fileData, fileName, generated, config.label]);
 
   return (
     <Dialog open={exportId !== null} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Export invoices</DialogTitle>
+          <DialogTitle>Export {config.label}s</DialogTitle>
           <DialogDescription>
             {isDone
-              ? `Your ZIP with ${generated} invoice${generated !== 1 ? "s" : ""} is ready.`
+              ? `Your ZIP with ${generated} ${config.label}${generated !== 1 ? "s" : ""} is ready.`
               : isFailed
               ? "Something went wrong."
               : total > 0
@@ -113,7 +137,7 @@ export default function ExportInvoicesDialog({ exportId, onClose }: Props) {
   );
 }
 
-export function useInvoiceExport() {
+export function useExport(config: ExportConfig = INVOICE_EXPORT) {
   const client = useRuntimeClient();
   const [exportId, setExportId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
@@ -122,7 +146,7 @@ export function useInvoiceExport() {
     if (starting) return;
     setStarting(true);
     try {
-      const res = (await client.rpc(APP_ID, "start_export", args as Record<string, unknown>)) as {
+      const res = (await client.rpc(APP_ID, config.rpcName, args as Record<string, unknown>)) as {
         export_id: string;
       };
       setExportId(res.export_id);
@@ -135,6 +159,8 @@ export function useInvoiceExport() {
 
   return { exportId, starting, start, close: () => setExportId(null) };
 }
+
+export const useInvoiceExport = () => useExport(INVOICE_EXPORT);
 
 function triggerDownload(dataUrl: string, fileName: string) {
   const a = document.createElement("a");

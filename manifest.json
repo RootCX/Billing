@@ -112,6 +112,19 @@
         { "name": "file_size", "type": "number" },
         { "name": "error_message", "type": "text" }
       ]
+    },
+    {
+      "entityName": "incoming_export",
+      "fields": [
+        { "name": "status", "type": "text", "enum_values": ["pending", "running", "completed", "failed"], "required": true },
+        { "name": "filter", "type": "json" },
+        { "name": "total_count", "type": "number" },
+        { "name": "generated_count", "type": "number" },
+        { "name": "file_name", "type": "text" },
+        { "name": "file_data", "type": "text" },
+        { "name": "file_size", "type": "number" },
+        { "name": "error_message", "type": "text" }
+      ]
     }
   ],
   "permissions": {
@@ -133,7 +146,10 @@
       { "key": "peppol_send_log.write", "description": "Create Peppol send log entries" },
       { "key": "invoice_export.read", "description": "View invoice exports" },
       { "key": "invoice_export.write", "description": "Create and update invoice exports" },
-      { "key": "invoice_export.delete", "description": "Delete invoice exports" }
+      { "key": "invoice_export.delete", "description": "Delete invoice exports" },
+      { "key": "incoming_export.read", "description": "View incoming document exports" },
+      { "key": "incoming_export.write", "description": "Create and update incoming document exports" },
+      { "key": "incoming_export.delete", "description": "Delete incoming document exports" }
     ]
   }
 }

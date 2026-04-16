@@ -21,6 +21,7 @@ import {
   type Condition, type FieldDef,
 } from "../components/FilterSystem";
 import { cn } from "@/lib/utils";
+import ExportInvoicesDialog, { useExport, INCOMING_EXPORT } from "../components/ExportInvoicesDialog";
 
 const PAGE_SIZE = 20;
 
@@ -279,6 +280,8 @@ export default function IncomingInvoicesView() {
     where, orderBy, order, limit: PAGE_SIZE, offset: pageIndex * PAGE_SIZE,
   });
 
+  const exporter = useExport(INCOMING_EXPORT);
+  const canExport = !loading && total > 0;
   const hasAny = conditions.length > 0 || !!search;
 
   // ── Columns ─────────────────────────────────────────────────────────────────
@@ -445,7 +448,22 @@ export default function IncomingInvoicesView() {
       <PageHeader
         title="Incoming Invoices"
         description="Invoices received via the Peppol network"
+        actions={
+          <Button
+            variant="outline"
+            disabled={!canExport || exporter.starting}
+            onClick={() => exporter.start({ where, orderBy, order })}
+            title={canExport ? `Export ${total} document${total !== 1 ? "s" : ""} as ZIP` : "No documents to export"}
+          >
+            {exporter.starting
+              ? <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+              : <IconDownload className="h-4 w-4 mr-2" />}
+            Export{canExport ? ` (${total})` : ""}
+          </Button>
+        }
       />
+
+      <ExportInvoicesDialog exportId={exporter.exportId} onClose={exporter.close} config={INCOMING_EXPORT} />
 
       <FilterBar
         fieldDefs={FIELD_DEFS}
