@@ -12,8 +12,7 @@ import {
 } from "@tabler/icons-react";
 import { CountrySelect } from "./CountrySelect";
 
-// sentinel: field explicitly cleared — nothing printed on invoice
-export const FIELD_NONE = "__none__";
+import { FIELD_NONE } from "@shared/invoice-types";
 
 interface OverrideFieldProps {
   label: string;

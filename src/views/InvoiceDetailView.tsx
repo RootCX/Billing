@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { useAppRecord, useAppCollection } from "@rootcx/sdk";
 import {
   Button, Tabs, TabsList, TabsTrigger, TabsContent,
@@ -12,12 +12,11 @@ import {
 import { IconArrowLeft, IconDeviceFloppy, IconNetwork, IconPrinter, IconTag, IconDotsVertical, IconTrash } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type { Invoice, InvoiceStatus, LineItem, PeppolRegistration, SellerSettings } from "../types";
-import { computeTotals } from "../types";
-import InvoiceDetailsTab, { FIELD_NONE } from "../components/InvoiceDetailsTab";
+import { computeTotals, FIELD_NONE } from "../types";
+import InvoiceDetailsTab from "../components/InvoiceDetailsTab";
 import InvoiceComplianceTab from "../components/InvoiceComplianceTab";
-import InvoicePreview from "../components/InvoicePreview";
+const InvoicePreview = lazy(() => import("../components/InvoicePreview"));
 import PeppolSendDialog from "../components/PeppolSendDialog";
-import { downloadInvoicePdf } from "../lib/downloadInvoicePdf";
 
 const APP_ID = "billing";
 
@@ -196,8 +195,11 @@ export default function InvoiceDetailView({ invoiceId, onBack, onDeleted }: Prop
                   <TooltipContent side="left">{peppolDisabledReason}</TooltipContent>
                 )}
               </Tooltip>
-              <DropdownMenuItem onClick={() => downloadInvoicePdf(draft as Invoice, seller)}>
-                <IconPrinter className="h-4 w-4 mr-2" />Print / Export PDF
+              <DropdownMenuItem onClick={async () => {
+                const { downloadInvoicePdf } = await import("../lib/downloadInvoicePdf");
+                downloadInvoicePdf(draft as Invoice, seller);
+              }}>
+                <IconPrinter className="h-4 w-4 mr-2" />Export PDF
               </DropdownMenuItem>
               {isDeletable && (
                 <DropdownMenuItem
@@ -240,7 +242,9 @@ export default function InvoiceDetailView({ invoiceId, onBack, onDeleted }: Prop
           </Tabs>
         </div>
         <div className="flex-1 overflow-y-auto bg-muted/30 p-6">
-          <InvoicePreview invoice={draft as Invoice} />
+          <Suspense fallback={<div className="flex items-center justify-center h-full text-muted-foreground text-sm">Loading preview…</div>}>
+            <InvoicePreview invoice={draft as Invoice} />
+          </Suspense>
         </div>
       </div>
 

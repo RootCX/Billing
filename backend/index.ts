@@ -1,6 +1,6 @@
 import postgres from "postgres";
 import JSZip from "jszip";
-import { renderInvoicePdf, invoicePdfFilename, type Invoice, type SellerSettings } from "./pdf/renderInvoicePdf";
+import { renderInvoicePdf, invoicePdfFilename, type Invoice, type SellerSettings } from "./pdf/renderInvoicePdf.tsx";
 
 const APP_ID = "billing";
 const BATCH_SIZE = 500;

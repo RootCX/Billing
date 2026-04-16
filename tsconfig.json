@@ -9,8 +9,9 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@shared/*": ["./backend/shared/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "backend/shared"]
 }

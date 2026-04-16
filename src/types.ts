@@ -1,5 +1,8 @@
-export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "cancelled";
-export type VatTreatment = "standard" | "exempt" | "reverse_charge" | "intra_eu" | "export";
+export type { InvoiceStatus, VatTreatment, LineItem, InvoiceReference, Invoice, SellerSettings } from "@shared/invoice-types";
+export { FIELD_NONE, VAT_TREATMENT_LABELS, STATUS_STYLES, computeLineItem, formatCurrency, formatDate, invoicePdfFilename } from "@shared/invoice-types";
+import type { Invoice, LineItem } from "@shared/invoice-types";
+import { computeLineItem } from "@shared/invoice-types";
+
 export type ReferenceType = "purchase_order" | "contract_number" | "cost_center" | "project_reference" | "custom";
 export type PeppolRegStatus = "not_registered" | "pending" | "active" | "failed";
 export type PeppolSendStatus = "pending" | "sent" | "delivered" | "failed";
@@ -46,7 +49,6 @@ export interface PeppolSendLog {
   updated_at: string;
 }
 
-
 export interface Customer {
   id: string;
   company_name: string;
@@ -71,71 +73,6 @@ export interface Contact {
   is_default: boolean;
   created_at: string;
   updated_at: string;
-}
-
-export interface LineItem {
-  id: string;
-  product: string;
-  description: string;
-  quantity: number;
-  unit: string;
-  unit_price: number;
-  discount: number;
-  tax_rate: number;
-}
-
-export interface InvoiceReference {
-  id: string;
-  type: ReferenceType;
-  label: string;
-  value: string;
-}
-
-export interface Invoice {
-  id: string;
-  invoice_number: string;
-  status: InvoiceStatus;
-  invoice_date: string;
-  due_date: string;
-  currency: string;
-  vat_treatment: VatTreatment;
-  client_company: string;
-  client_vat: string;
-  client_street: string;
-  client_city: string;
-  client_postal: string;
-  client_country: string;
-  client_contact_name: string;
-  client_contact_email: string;
-  line_items: LineItem[];
-  references: InvoiceReference[];
-  internal_notes: string;
-  terms: string;
-  subtotal: number;
-  total_tax: number;
-  total: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface SellerSettings {
-  id: string;
-  company_name: string;
-  vat_number: string;
-  street: string;
-  city: string;
-  postal_code: string;
-  country_code: string;
-  email: string;
-  phone: string;
-  iban: string;
-  bic: string;
-  logo: string;
-  default_currency: string;
-  default_vat_rate: number;
-  invoice_prefix: string;
-  default_terms: string;
-  default_notes: string;
 }
 
 export interface OutgoingStatus {
@@ -207,13 +144,6 @@ export function contactDisplayName(c: Contact): string {
   return `${c.first_name} ${c.last_name ?? ""}`.trim();
 }
 
-export function computeLineItem(item: LineItem) {
-  const gross = item.quantity * item.unit_price;
-  const discounted = gross * (1 - item.discount / 100);
-  const tax = discounted * (item.tax_rate / 100);
-  return { subtotal: discounted, tax, total: discounted + tax };
-}
-
 export function computeTotals(items: LineItem[]) {
   let subtotal = 0;
   let totalTax = 0;
@@ -223,20 +153,6 @@ export function computeTotals(items: LineItem[]) {
     totalTax += t;
   }
   return { subtotal, totalTax, total: subtotal + totalTax };
-}
-
-export function formatCurrency(amount: number, currency: string) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: currency || "EUR",
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
-
-export function formatDate(dateStr: string) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
 export const REFERENCE_TYPE_LABELS: Record<ReferenceType, string> = {

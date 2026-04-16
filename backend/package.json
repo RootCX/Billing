@@ -1,13 +1,11 @@
 {
   "name": "billing-backend",
-  "private": true,
-  "type": "module",
   "dependencies": {
+    "@react-pdf/renderer": "^4.5.1",
     "jszip": "^3.10.1",
-    "pdfkit": "^0.15.0",
-    "postgres": "^3.4.4"
+    "postgres": "^3.4.4",
+    "react": "^19.2.5"
   },
-  "devDependencies": {
-    "@types/pdfkit": "^0.13.4"
-  }
+  "private": true,
+  "type": "module"
 }
