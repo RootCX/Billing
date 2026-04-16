@@ -328,7 +328,7 @@ function FieldPicker({ fieldDefs, onPick }: { fieldDefs: FieldDef[]; onPick: (ke
           />
         </div>
       </div>
-      <ScrollArea className="max-h-60">
+      <ScrollArea className="max-h-72 overflow-y-auto">
         <div className="py-1">
           {filtered.map(f => (
             <button
