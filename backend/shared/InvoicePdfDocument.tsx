@@ -129,9 +129,12 @@ const COL_W = {
 interface Props {
   invoice: Invoice;
   seller?: SellerSettings;
+  documentTitle?: string;
+  paymentInfo?: { iban?: string; bic?: string };
+  footerText?: string;
 }
 
-export default function InvoicePdfDocument({ invoice, seller }: Props) {
+export default function InvoicePdfDocument({ invoice, seller, documentTitle, paymentInfo, footerText }: Props) {
   const lineItems: LineItem[] = invoice.line_items ?? [];
   const references = invoice.references ?? [];
   const currency = invoice.currency || "EUR";
@@ -144,12 +147,14 @@ export default function InvoicePdfDocument({ invoice, seller }: Props) {
 
   const notes = invoice.internal_notes === FIELD_NONE ? null : (invoice.internal_notes || seller?.default_notes);
   const terms = invoice.terms === FIELD_NONE ? null : (invoice.terms || seller?.default_terms);
+  const iban = paymentInfo?.iban || seller?.iban;
+  const bic = paymentInfo?.bic || seller?.bic;
 
-  const footerParts = [
+  const defaultFooter = [
     seller?.company_name,
     seller?.vat_number ? `VAT ${seller.vat_number}` : "",
     seller?.email,
-  ].filter(Boolean);
+  ].filter(Boolean).join(" \u00B7 ");
 
   return (
     <Document>
@@ -170,7 +175,7 @@ export default function InvoicePdfDocument({ invoice, seller }: Props) {
             {seller?.email && <Text style={s.sellerDetail}>{seller.email}</Text>}
           </View>
           <View style={{ alignItems: "flex-end" }}>
-            <Text style={s.invoiceTitle}>INVOICE</Text>
+            <Text style={s.invoiceTitle}>{documentTitle || "INVOICE"}</Text>
             <Text style={s.invoiceNumber}>{invoice.invoice_number || "INV-XXXXXX"}</Text>
             <View style={[s.statusPill, { backgroundColor: statusStyle.bg }]}>
               <Text style={[s.statusText, { color: statusStyle.text }]}>{statusStyle.label}</Text>
@@ -265,20 +270,20 @@ export default function InvoicePdfDocument({ invoice, seller }: Props) {
           </View>
         </View>
 
-        {(seller?.iban || seller?.bic) && (
+        {(iban || bic) && (
           <View style={s.sectionDivider}>
             <Text style={s.sectionLabel}>Bank Details</Text>
             <View style={s.bankRow}>
-              {seller.iban && (
+              {iban && (
                 <View>
                   <Text style={s.bankLabel}>IBAN</Text>
-                  <Text style={s.bankValue}>{seller.iban}</Text>
+                  <Text style={s.bankValue}>{iban}</Text>
                 </View>
               )}
-              {seller.bic && (
+              {bic && (
                 <View>
                   <Text style={s.bankLabel}>BIC</Text>
-                  <Text style={s.bankValue}>{seller.bic}</Text>
+                  <Text style={s.bankValue}>{bic}</Text>
                 </View>
               )}
             </View>
@@ -300,7 +305,7 @@ export default function InvoicePdfDocument({ invoice, seller }: Props) {
         )}
 
         <View style={s.footer} fixed>
-          <Text style={s.footerText}>{footerParts.join(" \u00B7 ")}</Text>
+          <Text style={s.footerText}>{footerText || defaultFooter}</Text>
         </View>
       </Page>
     </Document>
