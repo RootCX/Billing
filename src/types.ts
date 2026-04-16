@@ -104,7 +104,7 @@ export interface IncomingDocument {
   instance_identifier: string;
   as4_message_id: string;
   xml: string;
-  attachments: unknown[];
+  attachments: { id?: string; fileId: string; filename: string; mimeCode: string; description?: string }[];
   created_at: string;
   updated_at: string;
 }

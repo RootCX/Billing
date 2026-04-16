@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, lazy, Suspense } from "react";
-import { useAppCollection, useIntegration, type WhereClause } from "@rootcx/sdk";
+import { useAppCollection, useIntegration, useRuntimeClient, type WhereClause } from "@rootcx/sdk";
+import { getPdfAttachment, peppolStorageUrl } from "../components/IncomingPdfPreview";
 import {
   PageHeader, DataTable, EmptyState, Badge, Button, toast,
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -358,18 +359,30 @@ export default function IncomingInvoicesView() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const { call: peppolCall } = useIntegration("peppol");
+  const client = useRuntimeClient();
 
   useEffect(() => { setDownloading(false); }, [selected?.id]);
 
   const handleExportPdf = async (doc: IncomingDocument) => {
-    if (downloading || !doc.xml) return;
+    if (downloading) return;
     setDownloading(true);
     try {
-      const ubl = await peppolCall("parse_ubl", { xml: doc.xml });
-      const { ublToIncomingPdfData } = await import("@shared/incoming-types");
-      const data = ublToIncomingPdfData(ubl as ParsedUbl, doc);
-      const { downloadIncomingPdf } = await import("../lib/downloadIncomingPdf");
-      await downloadIncomingPdf(data, invoicePdfFilename({ ...doc, invoice_number: doc.document_number }));
+      const pdfAttachment = getPdfAttachment(doc);
+      if (pdfAttachment) {
+        const res = await fetch(peppolStorageUrl(client.getBaseUrl(), pdfAttachment.fileId), {
+          headers: { Authorization: `Bearer ${client.getAccessToken()}` },
+        });
+        if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+        const blob = await res.blob();
+        const { triggerBlobDownload } = await import("../lib/triggerBlobDownload");
+        triggerBlobDownload(blob, pdfAttachment.filename || invoicePdfFilename({ ...doc, invoice_number: doc.document_number }));
+      } else {
+        const ubl = await peppolCall("parse_ubl", { xml: doc.xml });
+        const { ublToIncomingPdfData } = await import("@shared/incoming-types");
+        const data = ublToIncomingPdfData(ubl as ParsedUbl, doc);
+        const { downloadIncomingPdf } = await import("../lib/downloadIncomingPdf");
+        await downloadIncomingPdf(data, invoicePdfFilename({ ...doc, invoice_number: doc.document_number }));
+      }
     } catch (e: any) {
       toast.error(e?.message || "Failed to export PDF");
     } finally {
@@ -393,7 +406,7 @@ export default function IncomingInvoicesView() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" disabled={downloading || !selected.xml} onClick={() => handleExportPdf(selected)}>
+            <Button variant="outline" size="sm" disabled={downloading || (!selected.xml && !selected.attachments?.length)} onClick={() => handleExportPdf(selected)}>
               {downloading
                 ? <IconLoader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
                 : <IconDownload className="h-3.5 w-3.5 mr-1.5" />}
