@@ -1,15 +1,16 @@
 import { useState, useMemo } from "react";
 import { useAppCollection, type WhereClause } from "@rootcx/sdk";
 import {
-  PageHeader, DataTable, EmptyState, Button, Badge, ConfirmDialog, type SortingState,
+  PageHeader, DataTable, EmptyState, Button, Badge, type SortingState,
 } from "@rootcx/ui";
-import { IconPlus, IconFileInvoice, IconNetwork } from "@tabler/icons-react";
+import { IconPlus, IconFileInvoice, IconNetwork, IconDownload, IconLoader2 } from "@tabler/icons-react";
 import type { Invoice, InvoiceStatus, VatTreatment, PeppolSendLog } from "../types";
 import { formatCurrency, formatDate } from "../types";
 import {
   FilterBar, conditionToWhereClause,
   type Condition, type FieldDef,
 } from "../components/FilterSystem";
+import ExportInvoicesDialog, { useInvoiceExport } from "../components/ExportInvoicesDialog";
 
 const APP_ID   = "billing";
 const PAGE_SIZE = 20;
@@ -102,6 +103,9 @@ export default function InvoiceListView({ onOpenInvoice, onNewInvoice }: Props) 
     where, orderBy, order, limit: PAGE_SIZE, offset: pageIndex * PAGE_SIZE,
   });
 
+  const exporter = useInvoiceExport();
+  const canExport = !loading && total > 0;
+
   // Fetch peppol send logs for current page to show badge
   const invoiceIds = (invoices ?? []).map((i) => i.id);
   const { data: peppolLogs } = useAppCollection<PeppolSendLog>(APP_ID, "peppol_send_log", {
@@ -180,12 +184,27 @@ export default function InvoiceListView({ onOpenInvoice, onNewInvoice }: Props) 
         title="Invoices"
         description="Manage your invoices and track payments"
         actions={
-          <Button onClick={onNewInvoice}>
-            <IconPlus className="h-4 w-4 mr-2" />
-            New Invoice
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              disabled={!canExport || exporter.starting}
+              onClick={() => exporter.start({ where, orderBy, order })}
+              title={canExport ? `Export ${total} invoice${total !== 1 ? "s" : ""} as ZIP` : "No invoices to export"}
+            >
+              {exporter.starting
+                ? <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+                : <IconDownload className="h-4 w-4 mr-2" />}
+              Export{canExport ? ` (${total})` : ""}
+            </Button>
+            <Button onClick={onNewInvoice}>
+              <IconPlus className="h-4 w-4 mr-2" />
+              New Invoice
+            </Button>
+          </>
         }
       />
+
+      <ExportInvoicesDialog exportId={exporter.exportId} onClose={exporter.close} />
 
       <FilterBar
         fieldDefs={FIELD_DEFS}

@@ -3,6 +3,21 @@ export type VatTreatment = "standard" | "exempt" | "reverse_charge" | "intra_eu"
 export type ReferenceType = "purchase_order" | "contract_number" | "cost_center" | "project_reference" | "custom";
 export type PeppolRegStatus = "not_registered" | "pending" | "active" | "failed";
 export type PeppolSendStatus = "pending" | "sent" | "delivered" | "failed";
+export type InvoiceExportStatus = "pending" | "running" | "completed" | "failed";
+
+export interface InvoiceExport {
+  id: string;
+  status: InvoiceExportStatus;
+  filter: unknown;
+  total_count: number;
+  generated_count: number;
+  file_name: string;
+  file_data: string;
+  file_size: number;
+  error_message: string;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface PeppolRegistration {
   id: string;

@@ -1,0 +1,13 @@
+{
+  "name": "billing-backend",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "pdfkit": "^0.15.0",
+    "postgres": "^3.4.4"
+  },
+  "devDependencies": {
+    "@types/pdfkit": "^0.13.4"
+  }
+}
