@@ -85,9 +85,13 @@ export const STATUS_STYLES: Record<string, { bg: string; text: string; label: st
 };
 
 export function computeLineItem(item: LineItem) {
-  const gross = item.quantity * item.unit_price;
-  const discounted = gross * (1 - item.discount / 100);
-  const tax = discounted * (item.tax_rate / 100);
+  const quantity = Number(item.quantity) || 0;
+  const unitPrice = Number(item.unit_price) || 0;
+  const discount = Number(item.discount) || 0;
+  const taxRate = Number(item.tax_rate) || 0;
+  const gross = quantity * unitPrice;
+  const discounted = gross * (1 - discount / 100);
+  const tax = discounted * (taxRate / 100);
   return { subtotal: discounted, tax, total: discounted + tax };
 }
 
