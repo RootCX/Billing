@@ -1,7 +1,7 @@
 import React from "react";
 import { Document, Page, View, Text, Image, StyleSheet, Font } from "@react-pdf/renderer";
 import type { Invoice, LineItem, SellerSettings } from "./invoice-types";
-import { computeLineItem, formatCurrency, formatDate, FIELD_NONE, VAT_TREATMENT_LABELS, STATUS_STYLES } from "./invoice-types";
+import { computeLineItem, formatCurrency, formatDate, FIELD_NONE, VAT_TREATMENT_LABELS, STATUS_STYLES, isCreditNote, documentTitleFor } from "./invoice-types";
 
 Font.registerHyphenationCallback((word) => [word]);
 
@@ -140,6 +140,7 @@ export default function InvoicePdfDocument({ invoice, seller, documentTitle, pay
   const currency = invoice.currency || "EUR";
   const statusStyle = STATUS_STYLES[invoice.status] ?? STATUS_STYLES.draft;
 
+  const creditNote = isCreditNote(invoice);
   const rows = lineItems.map((item) => ({ item, ...computeLineItem(item) }));
   const subtotal = rows.reduce((a, r) => a + r.subtotal, 0);
   const totalTax = rows.reduce((a, r) => a + r.tax, 0);
@@ -175,8 +176,14 @@ export default function InvoicePdfDocument({ invoice, seller, documentTitle, pay
             {seller?.email && <Text style={s.sellerDetail}>{seller.email}</Text>}
           </View>
           <View style={{ alignItems: "flex-end" }}>
-            <Text style={s.invoiceTitle}>{documentTitle || "INVOICE"}</Text>
-            <Text style={s.invoiceNumber}>{invoice.invoice_number || "INV-XXXXXX"}</Text>
+            <Text style={s.invoiceTitle}>{documentTitle || documentTitleFor(invoice)}</Text>
+            <Text style={s.invoiceNumber}>{invoice.invoice_number || "—"}</Text>
+            {creditNote && invoice.corrected_invoice_number ? (
+              <Text style={s.sellerDetail}>
+                Re: {invoice.corrected_invoice_number}
+                {invoice.corrected_invoice_date ? ` (${formatDate(invoice.corrected_invoice_date)})` : ""}
+              </Text>
+            ) : null}
             <View style={[s.statusPill, { backgroundColor: statusStyle.bg }]}>
               <Text style={[s.statusText, { color: statusStyle.text }]}>{statusStyle.label}</Text>
             </View>
@@ -185,8 +192,10 @@ export default function InvoicePdfDocument({ invoice, seller, documentTitle, pay
 
         <View style={s.datesRow}>
           {([
-            { label: "Invoice Date", value: formatDate(invoice.invoice_date) || "\u2014" },
-            { label: "Due Date", value: formatDate(invoice.due_date) || "\u2014" },
+            { label: creditNote ? "Credit Note Date" : "Invoice Date", value: formatDate(invoice.invoice_date) || "\u2014" },
+            creditNote
+              ? { label: "Corrects Invoice", value: invoice.corrected_invoice_number || "\u2014" }
+              : { label: "Due Date", value: formatDate(invoice.due_date) || "\u2014" },
             { label: "VAT Treatment", value: VAT_TREATMENT_LABELS[invoice.vat_treatment] || "\u2014" },
           ] as const).map((d) => (
             <View key={d.label} style={s.dateCol}>

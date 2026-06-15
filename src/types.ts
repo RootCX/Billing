@@ -1,5 +1,5 @@
-export type { InvoiceStatus, VatTreatment, LineItem, InvoiceReference, Invoice, SellerSettings } from "@shared/invoice-types";
-export { FIELD_NONE, VAT_TREATMENT_LABELS, STATUS_STYLES, computeLineItem, formatCurrency, formatDate, invoicePdfFilename } from "@shared/invoice-types";
+export type { InvoiceStatus, VatTreatment, DocumentType, LineItem, InvoiceReference, Invoice, SellerSettings } from "@shared/invoice-types";
+export { FIELD_NONE, VAT_TREATMENT_LABELS, STATUS_STYLES, computeLineItem, formatCurrency, formatDate, invoicePdfFilename, isCreditNote, documentTitleFor } from "@shared/invoice-types";
 import type { Invoice, LineItem } from "@shared/invoice-types";
 import { computeLineItem } from "@shared/invoice-types";
 
@@ -44,6 +44,7 @@ export interface PeppolSendLog {
   receiver_peppol_id: string;
   ubl_xml: string;
   error_message: string;
+  document_type?: "invoice" | "credit_note";
   sent_at: string;
   created_at: string;
   updated_at: string;

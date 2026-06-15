@@ -52,7 +52,12 @@
         { "name": "terms", "type": "text" },
         { "name": "subtotal", "type": "number" },
         { "name": "total_tax", "type": "number" },
-        { "name": "total", "type": "number" }
+        { "name": "total", "type": "number" },
+        { "name": "document_type", "type": "text", "enum_values": ["invoice", "credit_note"] },
+        { "name": "corrected_invoice_id", "type": "entity_link", "references": { "entity": "invoice", "field": "id" } },
+        { "name": "corrected_invoice_number", "type": "text" },
+        { "name": "corrected_invoice_date", "type": "date" },
+        { "name": "credit_reason", "type": "text" }
       ]
     },
     {
@@ -98,6 +103,7 @@
         { "name": "receiver_peppol_id", "type": "text" },
         { "name": "ubl_xml", "type": "text" },
         { "name": "error_message", "type": "text" },
+        { "name": "document_type", "type": "text", "enum_values": ["invoice", "credit_note"] },
         { "name": "sent_at", "type": "timestamp" }
       ]
     },

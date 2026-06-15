@@ -12,7 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import { cleanVat, deriveReceiverPeppolId } from "@/lib/vat";
 import type { Invoice, PeppolRegistration, PeppolSendLog, SellerSettings, LineItem, InvoiceReference } from "../types";
-import { formatCurrency } from "../types";
+import { formatCurrency, isCreditNote } from "../types";
 
 const APP_ID = "billing";
 
@@ -39,6 +39,9 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
 
   const reg = regs?.[0];
   const seller = sellers?.[0];
+  const creditNote = isCreditNote(invoice);
+  const docLabel = creditNote ? "Credit note" : "Invoice";
+  const missingCorrectedRef = creditNote && !invoice.corrected_invoice_number;
 
   const senderPeppolId = reg?.peppol_id ?? "";
   const receiverPeppolId = invoice.client_vat
@@ -65,10 +68,8 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
       const projectRef = refs.find((r) => r.type === "project_reference")?.value;
       const buyerRef = refs.find((r) => r.type === "cost_center")?.value;
 
-      const invoiceParams = {
-        invoiceNumber: invoice.invoice_number,
-        issueDate: invoice.invoice_date,
-        dueDate: invoice.due_date,
+      // Shared between invoice and credit note (identical UBL party/total shapes).
+      const common = {
         currency: invoice.currency ?? "EUR",
         supplier: {
           peppolId: senderPeppolId,
@@ -95,24 +96,49 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
         ...(seller?.iban ? { paymentInfo: { iban: seller.iban, bic: seller.bic ?? "" } } : {}),
         ...(poRef ? { orderReference: poRef } : {}),
         ...(contractRef ? { contractReference: contractRef } : {}),
-        ...(projectRef ? { projectReference: projectRef } : {}),
         ...(buyerRef ? { buyerReference: buyerRef } : {}),
+        // The note carries any statutory mention the user typed manually.
         ...(invoice.internal_notes ? { note: invoice.internal_notes } : {}),
       };
 
-      // Generate UBL for storage
+      // Invoice and credit note follow the same generate-then-send dance; only
+      // the action names, the param key, and a few document-specific fields differ.
+      // (The Send button is disabled when a credit note is missing its corrected
+      // reference, and the worker validates it again.)
+      const paramKey = creditNote ? "creditNoteParams" : "invoiceParams";
+      const docParams = creditNote
+        ? {
+            creditNoteNumber: invoice.invoice_number,
+            issueDate: invoice.invoice_date,
+            correctedInvoiceNumber: invoice.corrected_invoice_number ?? "",
+            ...(invoice.corrected_invoice_date ? { correctedInvoiceDate: invoice.corrected_invoice_date } : {}),
+            ...common,
+          }
+        : {
+            invoiceNumber: invoice.invoice_number,
+            issueDate: invoice.invoice_date,
+            dueDate: invoice.due_date,
+            ...common,
+            ...(projectRef ? { projectReference: projectRef } : {}),
+          };
+      const genAction = creditNote ? "generate_credit_note_ubl" : "generate_ubl";
+      const sendAction = creditNote ? "send_credit_note" : "send_invoice";
+
+      // Generate the UBL once (for storage/preview) and reuse it for the send so
+      // the worker doesn't regenerate it; if generation fails the worker rebuilds
+      // it from the params.
       let xml = "";
       try {
-        const ublRes = await call("generate_ubl", { invoiceParams }) as { xml: string };
+        const ublRes = await call(genAction, { [paramKey]: docParams }) as { xml: string };
         xml = ublRes.xml ?? "";
         setUblXml(xml);
       } catch { /* non-blocking */ }
 
-      // Send
-      const result = await call("send_invoice", {
+      const result = await call(sendAction, {
         senderPeppolId,
         receiverPeppolId,
-        invoiceParams,
+        [paramKey]: docParams,
+        ...(xml ? { xml } : {}),
         countryCode: invoice.client_country ?? "BE",
       }) as { dokapiUlid: string; status: string };
 
@@ -128,11 +154,12 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
         receiver_peppol_id: receiverPeppolId,
         ubl_xml: xml,
         error_message: "",
+        document_type: creditNote ? "credit_note" : "invoice",
         sent_at: new Date().toISOString(),
       });
 
       setStep("success");
-      toast.success(`Invoice ${invoice.invoice_number} sent via Peppol`);
+      toast.success(`${docLabel} ${invoice.invoice_number} sent via Peppol`);
       onSent();
     } catch (e: any) {
       const msg = e.message ?? "Unknown error";
@@ -149,6 +176,7 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
           receiver_peppol_id: receiverPeppolId,
           ubl_xml: ublXml,
           error_message: msg,
+          document_type: creditNote ? "credit_note" : "invoice",
           sent_at: new Date().toISOString(),
         });
       } catch { /* best effort */ }
@@ -172,7 +200,7 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <IconNetwork className="h-5 w-5 text-primary" />
-            Send via Peppol
+            Send {creditNote ? "credit note" : "invoice"} via Peppol
           </DialogTitle>
         </DialogHeader>
 
@@ -183,9 +211,15 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
               {/* Invoice summary */}
               <div className="rounded-lg border bg-muted/30 p-3 space-y-2 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Invoice</span>
+                  <span className="text-muted-foreground">{docLabel}</span>
                   <span className="font-mono font-semibold">{invoice.invoice_number}</span>
                 </div>
+                {creditNote && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Corrects invoice</span>
+                    <span className="font-mono">{invoice.corrected_invoice_number || "—"}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Client</span>
                   <span className="font-medium">{invoice.client_company}</span>
@@ -219,12 +253,13 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
               </div>
 
               {/* Warning if missing data */}
-              {(!senderPeppolId || !receiverPeppolId) && (
+              {(!senderPeppolId || !receiverPeppolId || missingCorrectedRef) && (
                 <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
                   <IconAlertCircle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
                   <span>
                     {!senderPeppolId && "Your Peppol registration is not active. "}
-                    {!receiverPeppolId && "Client VAT number is required to derive their Peppol ID."}
+                    {!receiverPeppolId && "Client VAT number is required to derive their Peppol ID. "}
+                    {missingCorrectedRef && "This credit note is missing the reference to the corrected invoice."}
                   </span>
                 </div>
               )}
@@ -234,7 +269,7 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
               <Button variant="outline" onClick={handleClose}>Cancel</Button>
               <Button
                 onClick={handleSend}
-                disabled={!senderPeppolId || !receiverPeppolId}
+                disabled={!senderPeppolId || !receiverPeppolId || missingCorrectedRef}
               >
                 <IconSend className="h-4 w-4 mr-2" />
                 Send via Peppol

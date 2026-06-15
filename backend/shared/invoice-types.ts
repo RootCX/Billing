@@ -1,5 +1,6 @@
 export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "cancelled";
 export type VatTreatment = "standard" | "exempt" | "reverse_charge" | "intra_eu" | "export";
+export type DocumentType = "invoice" | "credit_note";
 
 export interface LineItem {
   id: string;
@@ -42,6 +43,14 @@ export interface Invoice {
   subtotal: number;
   total_tax: number;
   total: number;
+  // Credit-note support. `document_type` defaults to "invoice" when absent
+  // (older records predate the field). For credit notes, the corrected_* fields
+  // point at the invoice this document cancels/corrects.
+  document_type?: DocumentType;
+  corrected_invoice_id?: string;
+  corrected_invoice_number?: string;
+  corrected_invoice_date?: string;
+  credit_reason?: string;
   created_at: string;
   updated_at: string;
 }
@@ -112,4 +121,13 @@ export function formatDate(dateStr: string) {
 export function invoicePdfFilename(invoice: { invoice_number?: string; id: string }): string {
   const base = (invoice.invoice_number || invoice.id).replace(/[^A-Za-z0-9._-]+/g, "_");
   return `${base}.pdf`;
+}
+
+export function isCreditNote(doc: { document_type?: DocumentType | string | null }): boolean {
+  return doc?.document_type === "credit_note";
+}
+
+/** Title shown on the PDF / dialogs. Falls back to INVOICE for legacy records. */
+export function documentTitleFor(doc: { document_type?: DocumentType | string | null }): string {
+  return isCreditNote(doc) ? "CREDIT NOTE" : "INVOICE";
 }

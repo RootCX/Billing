@@ -5,7 +5,7 @@ import {
 } from "@rootcx/ui";
 import { IconPlus, IconFileInvoice, IconNetwork, IconDownload, IconLoader2 } from "@tabler/icons-react";
 import type { Invoice, InvoiceStatus, VatTreatment, PeppolSendLog } from "../types";
-import { formatCurrency, formatDate } from "../types";
+import { formatCurrency, formatDate, isCreditNote } from "../types";
 import {
   FilterBar, conditionToWhereClause,
   type Condition, type FieldDef,
@@ -121,9 +121,16 @@ export default function InvoiceListView({ onOpenInvoice, onNewInvoice }: Props) 
   // ── Columns ────────────────────────────────────────────────────────────────
   const columns = [
     {
-      accessorKey: "invoice_number", header: "Invoice #",
+      accessorKey: "invoice_number", header: "Document #",
       cell: ({ row }: { row: { original: Invoice } }) => (
-        <span className="font-mono text-sm font-medium">{row.original.invoice_number}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="font-mono text-sm font-medium">{row.original.invoice_number}</span>
+          {isCreditNote(row.original) && (
+            <span className="inline-flex items-center rounded-full border border-purple-200 bg-purple-50 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">
+              Credit Note
+            </span>
+          )}
+        </div>
       ),
     },
     {

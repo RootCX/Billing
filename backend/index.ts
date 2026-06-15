@@ -1,4 +1,3 @@
-import postgres from "postgres";
 import JSZip from "jszip";
 import { renderInvoicePdf, invoicePdfFilename, type Invoice, type SellerSettings } from "./pdf/renderInvoicePdf.tsx";
 import { ublToIncomingPdfData, type ParsedUbl } from "./shared/incoming-types";
@@ -8,16 +7,16 @@ const PEPPOL_APP_ID = "peppol";
 const MAX_EXPORT = 5000;
 const MAX_ZIP_SIZE_BYTES = 250 * 1024 * 1024;
 
-let sql: ReturnType<typeof postgres>;
+// v2 worker contract: no app-owned DB connection (use ctx.sql). The export jobs
+// below still talk to the core REST API via ctx.runtimeUrl, captured here.
 let runtimeUrl = "";
 
 serve({
   onStart(ctx: any) {
-    sql = postgres(ctx.databaseUrl);
     runtimeUrl = ctx.runtimeUrl;
   },
   rpc: {
-    next_invoice_number: (params: any) => nextInvoiceNumber(params),
+    next_invoice_number: (params: any, _caller: any, ctx: any) => nextInvoiceNumber(params, ctx),
     start_export: (params: any, caller: any) =>
       startGenericExport(params, caller, {
         queryApp: APP_ID, queryCollection: "invoice", exportCollection: "invoice_export",
@@ -32,17 +31,20 @@ serve({
   onJob: (payload: any, caller: any) => runJob(payload, caller),
 });
 
-async function nextInvoiceNumber({ prefix = "INV" }: { prefix?: string }) {
+async function nextInvoiceNumber({ prefix = "INV" }: { prefix?: string }, ctx: any) {
+  // v2 worker contract: the app holds no DB connection — SQL runs through the
+  // core via ctx.sql(text, params) under the caller's RLS identity. ctx.sql
+  // returns { columns, rows, rowCount } with rows as positional arrays.
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const result = await sql.begin(async (tx) => {
-    await tx`SELECT pg_advisory_xact_lock(hashtext(${"inv_seq_" + prefix + today}))`;
-    return tx`
-      SELECT COALESCE(MAX(CAST(SPLIT_PART(invoice_number, '-', 3) AS INTEGER)), 0) + 1 AS next_num
-      FROM "billing"."invoice"
-      WHERE invoice_number LIKE ${prefix + "-" + today + "-%"}
-    `;
-  });
-  return { invoice_number: `${prefix}-${today}-${String(result[0].next_num).padStart(3, "0")}` };
+  const like = `${prefix}-${today}-%`;
+  const result = await ctx.sql(
+    `SELECT COALESCE(MAX(CAST(SPLIT_PART(invoice_number, '-', 3) AS INTEGER)), 0) + 1 AS next_num
+       FROM "billing"."invoice"
+      WHERE invoice_number LIKE $1`,
+    [like],
+  );
+  const nextNum = Number(result?.rows?.[0]?.[0] ?? 1);
+  return { invoice_number: `${prefix}-${today}-${String(nextNum).padStart(3, "0")}` };
 }
 
 async function api(method: string, path: string, token: string, body?: unknown): Promise<any> {

@@ -1,7 +1,7 @@
 import { useState, useEffect, lazy, Suspense } from "react";
-import { useAppRecord, useAppCollection } from "@rootcx/sdk";
+import { useAppRecord, useAppCollection, useRuntimeClient } from "@rootcx/sdk";
 import {
-  Button, Tabs, TabsList, TabsTrigger, TabsContent,
+  Button, Badge, Tabs, TabsList, TabsTrigger, TabsContent,
   toast, LoadingState, ErrorState,
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
@@ -9,10 +9,10 @@ import {
   Tooltip, TooltipTrigger, TooltipContent, TooltipProvider,
   ConfirmDialog,
 } from "@rootcx/ui";
-import { IconArrowLeft, IconDeviceFloppy, IconNetwork, IconPrinter, IconTag, IconDotsVertical, IconTrash } from "@tabler/icons-react";
+import { IconArrowLeft, IconDeviceFloppy, IconNetwork, IconPrinter, IconTag, IconDotsVertical, IconTrash, IconReceiptRefund } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type { Invoice, InvoiceStatus, LineItem, PeppolRegistration, SellerSettings } from "../types";
-import { computeTotals, FIELD_NONE } from "../types";
+import { computeTotals, FIELD_NONE, isCreditNote, todayISO } from "../types";
 import InvoiceDetailsTab from "../components/InvoiceDetailsTab";
 import InvoiceComplianceTab from "../components/InvoiceComplianceTab";
 const InvoicePreview = lazy(() => import("../components/InvoicePreview"));
@@ -31,6 +31,7 @@ const STATUS_CONFIG: Record<InvoiceStatus, { label: string; className: string }>
 const STATUSES: InvoiceStatus[] = ["draft", "sent", "paid", "overdue", "cancelled"];
 
 function buildPayload(draft: Partial<Invoice>, status: InvoiceStatus, seller?: SellerSettings) {
+  const isCN = draft.document_type === "credit_note";
   return {
     invoice_number:       draft.invoice_number ?? "",
     status,
@@ -53,12 +54,26 @@ function buildPayload(draft: Partial<Invoice>, status: InvoiceStatus, seller?: S
     subtotal:  draft.subtotal  ?? 0,
     total_tax: draft.total_tax ?? 0,
     total:     draft.total     ?? 0,
+    document_type: isCN ? "credit_note" : "invoice",
+    // Only emit the corrected-invoice link fields for credit notes — sending
+    // empty strings into the entity_link / date fields could be rejected and
+    // would needlessly touch every plain-invoice save.
+    ...(isCN
+      ? {
+          corrected_invoice_id:     draft.corrected_invoice_id ?? "",
+          corrected_invoice_number: draft.corrected_invoice_number ?? "",
+          corrected_invoice_date:   draft.corrected_invoice_date ?? "",
+          credit_reason:            draft.credit_reason ?? "",
+        }
+      : {}),
   };
 }
 
-interface Props { invoiceId: string; onBack: () => void; onDeleted?: () => void; }
+interface Props { invoiceId: string; onBack: () => void; onDeleted?: () => void; onOpenInvoice?: (id: string) => void; }
 
-export default function InvoiceDetailView({ invoiceId, onBack, onDeleted }: Props) {
+export default function InvoiceDetailView({ invoiceId, onBack, onDeleted, onOpenInvoice }: Props) {
+  const client = useRuntimeClient();
+  const { create: createInvoice } = useAppCollection<Invoice>(APP_ID, "invoice");
   const { data: peppolRegs }     = useAppCollection<PeppolRegistration>(APP_ID, "peppol_registration");
   const { data: sellerSettings } = useAppCollection<SellerSettings>(APP_ID, "seller_settings");
   const seller       = sellerSettings?.[0];
@@ -76,6 +91,7 @@ export default function InvoiceDetailView({ invoiceId, onBack, onDeleted }: Prop
   const [selectedStatus, setSelectedStatus] = useState<InvoiceStatus | "">("");
   const [peppolDialogOpen, setPeppolDialogOpen] = useState(false);
   const [deleteOpen, setDeleteOpen]     = useState(false);
+  const [creatingCN, setCreatingCN]     = useState(false);
 
   useEffect(() => {
     if (invoice) setDraft({ ...invoice, line_items: invoice.line_items ?? [], references: invoice.references ?? [] });
@@ -110,6 +126,55 @@ export default function InvoiceDetailView({ invoiceId, onBack, onDeleted }: Prop
     }
   };
 
+  const handleCreateCreditNote = async () => {
+    if (creatingCN || !invoice) return;
+    setCreatingCN(true);
+    try {
+      const today = todayISO();
+      // Dedicated credit-note sequence: CN-YYYYMMDD-NNN (reuses the invoice
+      // numbering RPC with a distinct prefix, so no collisions with invoices).
+      const { invoice_number } = await client.rpc(
+        APP_ID, "next_invoice_number", { prefix: "CN" },
+      ) as { invoice_number: string };
+      const cn = await createInvoice({
+        invoice_number,
+        status: "draft",
+        document_type: "credit_note",
+        corrected_invoice_id: invoice.id,
+        corrected_invoice_number: invoice.invoice_number,
+        corrected_invoice_date: invoice.invoice_date,
+        credit_reason: "",
+        invoice_date: today,
+        due_date: today,
+        currency: invoice.currency ?? "EUR",
+        vat_treatment: invoice.vat_treatment ?? "standard",
+        client_company: invoice.client_company ?? "",
+        client_vat: invoice.client_vat ?? "",
+        client_street: invoice.client_street ?? "",
+        client_city: invoice.client_city ?? "",
+        client_postal: invoice.client_postal ?? "",
+        client_country: invoice.client_country ?? "",
+        client_contact_name: invoice.client_contact_name ?? "",
+        client_contact_email: invoice.client_contact_email ?? "",
+        // Full copy of the original lines/refs — the user trims for partial credits.
+        line_items: invoice.line_items ?? [],
+        references: invoice.references ?? [],
+        internal_notes: "",
+        terms: "",
+        subtotal: invoice.subtotal ?? 0,
+        total_tax: invoice.total_tax ?? 0,
+        total: invoice.total ?? 0,
+      });
+      toast.success(`Credit note ${invoice_number} created from ${invoice.invoice_number}`);
+      if (onOpenInvoice) onOpenInvoice(cn.id);
+      else onBack();
+    } catch (e: any) {
+      toast.error("Failed to create credit note: " + e.message);
+    } finally {
+      setCreatingCN(false);
+    }
+  };
+
   const handleMarkAs = async () => {
     if (!selectedStatus || saving) return;
     setSaving(true);
@@ -131,6 +196,11 @@ export default function InvoiceDetailView({ invoiceId, onBack, onDeleted }: Prop
 
   const currentStatus = (draft.status ?? "draft") as InvoiceStatus;
   const statusCfg     = STATUS_CONFIG[currentStatus];
+  const creditNote    = isCreditNote(draft);
+  // A credit note corrects an already-issued (Peppol-locked) invoice. Offer the
+  // action only on sent invoices, and never on a credit note itself.
+  const canCreateCreditNote   = !creditNote && !isEditable;
+  const createCnDisabledReason = !creditNote && isEditable ? "Send the invoice via Peppol first" : null;
 
   const totalIssues =
     [draft.client_company, draft.client_vat, draft.client_street, draft.client_city, draft.client_postal]
@@ -156,9 +226,16 @@ export default function InvoiceDetailView({ invoiceId, onBack, onDeleted }: Prop
           </Button>
           <div>
             <p className="font-semibold text-sm">{draft.invoice_number}</p>
-            <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium mt-0.5", statusCfg.className)}>
-              {statusCfg.label}
-            </span>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium", statusCfg.className)}>
+                {statusCfg.label}
+              </span>
+              {creditNote && (
+                <Badge variant="outline" className="text-[10px] border-purple-200 bg-purple-50 text-purple-700">
+                  Credit Note
+                </Badge>
+              )}
+            </div>
           </div>
         </div>
 
@@ -195,6 +272,24 @@ export default function InvoiceDetailView({ invoiceId, onBack, onDeleted }: Prop
                   <TooltipContent side="left">{peppolDisabledReason}</TooltipContent>
                 )}
               </Tooltip>
+              {!creditNote && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div>
+                      <DropdownMenuItem
+                        disabled={!canCreateCreditNote || creatingCN}
+                        onClick={() => canCreateCreditNote && handleCreateCreditNote()}
+                      >
+                        <IconReceiptRefund className="h-4 w-4 mr-2" />
+                        {creatingCN ? "Creating…" : "Create credit note"}
+                      </DropdownMenuItem>
+                    </div>
+                  </TooltipTrigger>
+                  {createCnDisabledReason && (
+                    <TooltipContent side="left">{createCnDisabledReason}</TooltipContent>
+                  )}
+                </Tooltip>
+              )}
               <DropdownMenuItem onClick={async () => {
                 const { downloadInvoicePdf } = await import("../lib/downloadInvoicePdf");
                 downloadInvoicePdf(draft as Invoice, seller);
