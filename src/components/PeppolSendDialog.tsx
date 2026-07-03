@@ -42,6 +42,16 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
   const creditNote = isCreditNote(invoice);
   const docLabel = creditNote ? "Credit note" : "Invoice";
   const missingCorrectedRef = creditNote && !invoice.corrected_invoice_number;
+  const documentCurrency = (invoice.currency ?? "EUR").toUpperCase();
+  const taxCurrency = (invoice.tax_currency ?? "").toUpperCase();
+  const needsAccountingTaxCurrency =
+    (seller?.country_code ?? "BE").toUpperCase() === "BE"
+    && documentCurrency !== "EUR"
+    && invoice.vat_treatment === "standard"
+    && Number(invoice.total_tax ?? 0) > 0;
+  const missingAccountingTaxCurrency =
+    needsAccountingTaxCurrency
+    && (!taxCurrency || Number(invoice.tax_amount_in_tax_currency ?? 0) === 0);
 
   const senderPeppolId = reg?.peppol_id ?? "";
   const receiverPeppolId = invoice.client_vat
@@ -71,6 +81,12 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
       // Shared between invoice and credit note (identical UBL party/total shapes).
       const common = {
         currency: invoice.currency ?? "EUR",
+        ...(taxCurrency && Number(invoice.tax_amount_in_tax_currency ?? 0) !== 0
+          ? {
+              taxCurrency,
+              taxAmountInTaxCurrency: invoice.tax_amount_in_tax_currency,
+            }
+          : {}),
         supplier: {
           peppolId: senderPeppolId,
           name: seller?.company_name ?? "",
@@ -253,13 +269,14 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
               </div>
 
               {/* Warning if missing data */}
-              {(!senderPeppolId || !receiverPeppolId || missingCorrectedRef) && (
+              {(!senderPeppolId || !receiverPeppolId || missingCorrectedRef || missingAccountingTaxCurrency) && (
                 <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
                   <IconAlertCircle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
                   <span>
                     {!senderPeppolId && "Your Peppol registration is not active. "}
                     {!receiverPeppolId && "Client VAT number is required to derive their Peppol ID. "}
-                    {missingCorrectedRef && "This credit note is missing the reference to the corrected invoice."}
+                    {missingCorrectedRef && "This credit note is missing the reference to the corrected invoice. "}
+                    {missingAccountingTaxCurrency && "Belgian VAT in a non-EUR invoice requires the VAT amount in EUR before Peppol sending."}
                   </span>
                 </div>
               )}
@@ -269,7 +286,7 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
               <Button variant="outline" onClick={handleClose}>Cancel</Button>
               <Button
                 onClick={handleSend}
-                disabled={!senderPeppolId || !receiverPeppolId || missingCorrectedRef}
+                disabled={!senderPeppolId || !receiverPeppolId || missingCorrectedRef || missingAccountingTaxCurrency}
               >
                 <IconSend className="h-4 w-4 mr-2" />
                 Send via Peppol

@@ -417,6 +417,56 @@ export default function InvoiceDetailsTab({ draft, onChange, sellerDefaultTerms 
         </div>
       )}
 
+      {currency !== "EUR" && (draft.vat_treatment ?? "standard") === "standard" && Number(draft.total_tax ?? 0) > 0 && (
+        <div className="mb-3 rounded-md border p-3 bg-muted/20">
+          <div className="mb-2 flex items-center justify-between">
+            <Label className="text-xs font-medium text-muted-foreground">VAT Accounting Currency</Label>
+            <Badge variant={draft.tax_currency && draft.tax_amount_in_tax_currency ? "secondary" : "outline"} className="text-[10px]">
+              Peppol required
+            </Badge>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Tax Currency">
+              <Input
+                value={draft.tax_currency ?? ""}
+                onChange={(e) => onChange({ tax_currency: e.target.value.toUpperCase() })}
+                className="h-8 text-sm font-mono"
+                placeholder="EUR"
+                maxLength={3}
+              />
+            </Field>
+            <Field label="VAT Amount">
+              <Input
+                type="number"
+                step="0.01"
+                value={draft.tax_amount_in_tax_currency ?? ""}
+                onChange={(e) => onChange({ tax_amount_in_tax_currency: Number(e.target.value) || 0 })}
+                className="h-8 text-sm font-mono"
+                placeholder="0.00"
+              />
+            </Field>
+            <Field label="Exchange Rate">
+              <Input
+                type="number"
+                step="0.000001"
+                value={draft.tax_exchange_rate ?? ""}
+                onChange={(e) => onChange({ tax_exchange_rate: Number(e.target.value) || 0 })}
+                className="h-8 text-sm font-mono"
+                placeholder="0.000000"
+              />
+            </Field>
+            <Field label="Rate Date">
+              <Input
+                type="date"
+                value={draft.tax_exchange_rate_date ?? ""}
+                onChange={(e) => onChange({ tax_exchange_rate_date: e.target.value })}
+                className="h-8 text-sm"
+              />
+            </Field>
+          </div>
+        </div>
+      )}
+
       <Button variant="outline" size="sm" className="w-full"
         onClick={() => { setEditingItem(null); setLineItemDialogOpen(true); }}>
         <IconPlus className="h-3.5 w-3.5 mr-2" />Add Line Item

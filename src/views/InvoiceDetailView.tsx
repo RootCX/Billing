@@ -53,6 +53,10 @@ function buildPayload(draft: Partial<Invoice>, status: InvoiceStatus, seller?: S
     terms:          draft.terms         === FIELD_NONE ? FIELD_NONE : (draft.terms         || seller?.default_terms || ""),
     subtotal:  draft.subtotal  ?? 0,
     total_tax: draft.total_tax ?? 0,
+    tax_currency: draft.tax_currency ?? "",
+    tax_amount_in_tax_currency: draft.tax_amount_in_tax_currency ?? 0,
+    tax_exchange_rate: draft.tax_exchange_rate ?? 0,
+    tax_exchange_rate_date: draft.tax_exchange_rate_date ?? "",
     total:     draft.total     ?? 0,
     document_type: isCN ? "credit_note" : "invoice",
     // Only emit the corrected-invoice link fields for credit notes — sending
@@ -163,6 +167,10 @@ export default function InvoiceDetailView({ invoiceId, onBack, onDeleted, onOpen
         terms: "",
         subtotal: invoice.subtotal ?? 0,
         total_tax: invoice.total_tax ?? 0,
+        tax_currency: invoice.tax_currency ?? "",
+        tax_amount_in_tax_currency: invoice.tax_amount_in_tax_currency ?? 0,
+        tax_exchange_rate: invoice.tax_exchange_rate ?? 0,
+        tax_exchange_rate_date: invoice.tax_exchange_rate_date ?? "",
         total: invoice.total ?? 0,
       });
       toast.success(`Credit note ${invoice_number} created from ${invoice.invoice_number}`);

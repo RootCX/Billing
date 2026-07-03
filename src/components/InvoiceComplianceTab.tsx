@@ -17,7 +17,13 @@ interface ComplianceSection {
 }
 
 function buildCompliance(draft: Partial<Invoice>): ComplianceSection[] {
-  return [
+  const currency = (draft.currency ?? "EUR").toUpperCase();
+  const needsAccountingTaxCurrency =
+    currency !== "EUR"
+    && draft.vat_treatment === "standard"
+    && Number(draft.total_tax ?? 0) > 0;
+
+  const sections: ComplianceSection[] = [
     {
       title: "Invoice Details",
       items: [
@@ -44,6 +50,20 @@ function buildCompliance(draft: Partial<Invoice>): ComplianceSection[] {
       ],
     },
   ];
+
+  if (needsAccountingTaxCurrency) {
+    sections.push({
+      title: "VAT Accounting Currency",
+      items: [
+        { label: "VAT accounting currency", ok: !!draft.tax_currency?.trim() },
+        { label: "VAT amount in accounting currency", ok: Number(draft.tax_amount_in_tax_currency ?? 0) !== 0 },
+        { label: "Exchange rate", ok: Number(draft.tax_exchange_rate ?? 0) > 0 },
+        { label: "Exchange rate date", ok: !!draft.tax_exchange_rate_date },
+      ],
+    });
+  }
+
+  return sections;
 }
 
 export default function InvoiceComplianceTab({ draft }: Props) {

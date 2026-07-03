@@ -148,6 +148,8 @@ export default function InvoicePdfDocument({ invoice, seller, documentTitle, pay
 
   const notes = invoice.internal_notes === FIELD_NONE ? null : (invoice.internal_notes || seller?.default_notes);
   const terms = invoice.terms === FIELD_NONE ? null : (invoice.terms || seller?.default_terms);
+  const accountingTaxCurrency = invoice.tax_currency || "";
+  const accountingTaxAmount = Number(invoice.tax_amount_in_tax_currency || 0);
   const iban = paymentInfo?.iban || seller?.iban;
   const bic = paymentInfo?.bic || seller?.bic;
 
@@ -270,6 +272,12 @@ export default function InvoicePdfDocument({ invoice, seller, documentTitle, pay
                 <Text style={s.totalValue}>{formatCurrency(totalTax, currency)}</Text>
               </View>
             )}
+            {accountingTaxCurrency && accountingTaxAmount !== 0 && accountingTaxCurrency !== currency && (
+              <View style={s.totalRow}>
+                <Text style={s.totalLabel}>VAT payable ({accountingTaxCurrency})</Text>
+                <Text style={s.totalValue}>{formatCurrency(accountingTaxAmount, accountingTaxCurrency)}</Text>
+              </View>
+            )}
             <View style={s.totalDivider}>
               <View style={[s.totalRow, { marginBottom: 0 }]}>
                 <Text style={s.totalMainLabel}>Total ({currency})</Text>
@@ -303,6 +311,15 @@ export default function InvoicePdfDocument({ invoice, seller, documentTitle, pay
           <View style={s.sectionDivider}>
             <Text style={s.sectionLabel}>Notes</Text>
             <Text style={s.notesText}>{notes}</Text>
+          </View>
+        )}
+
+        {accountingTaxCurrency && accountingTaxAmount !== 0 && invoice.tax_exchange_rate && invoice.tax_exchange_rate_date && (
+          <View style={s.sectionDivider}>
+            <Text style={s.sectionLabel}>VAT Accounting Currency</Text>
+            <Text style={s.notesText}>
+              VAT payable: {formatCurrency(accountingTaxAmount, accountingTaxCurrency)}. Exchange rate: {invoice.tax_exchange_rate} on {formatDate(invoice.tax_exchange_rate_date)}.
+            </Text>
           </View>
         )}
 

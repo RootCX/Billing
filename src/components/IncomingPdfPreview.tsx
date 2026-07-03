@@ -7,6 +7,11 @@ import { ublToIncomingPdfData } from "@shared/incoming-types";
 import InvoicePdfDocument from "@shared/InvoicePdfDocument";
 
 const PEPPOL_APP_ID = "peppol";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isFileId(value: string): boolean {
+  return UUID_RE.test(value);
+}
 
 export function getPdfAttachment(doc: IncomingDocument) {
   return doc.attachments?.find((a) => a.mimeCode === "application/pdf" && a.fileId);
@@ -14,6 +19,16 @@ export function getPdfAttachment(doc: IncomingDocument) {
 
 export function peppolStorageUrl(baseUrl: string, fileId: string) {
   return `${baseUrl}/api/v1/apps/${PEPPOL_APP_ID}/storage/${fileId}`;
+}
+
+export function fetchXmlContent(client: { getBaseUrl(): string; getAccessToken(): string }, xmlField: string): Promise<string> {
+  if (!isFileId(xmlField)) return Promise.resolve(xmlField);
+  return fetch(peppolStorageUrl(client.getBaseUrl(), xmlField), {
+    headers: { Authorization: `Bearer ${client.getAccessToken()}` },
+  }).then((r) => {
+    if (!r.ok) throw new Error(`${r.status}`);
+    return r.text();
+  });
 }
 
 interface Props {
@@ -80,15 +95,17 @@ function EmbeddedPdfPreview({ fileId }: { fileId: string }) {
 
 function GeneratedPdfPreview({ doc }: { doc: IncomingDocument }) {
   const { call } = useIntegration("peppol");
+  const client = useRuntimeClient();
   const [pdfData, setPdfData] = useState<ReturnType<typeof ublToIncomingPdfData> | null>(null);
 
   useEffect(() => {
     if (!doc.xml) return;
     setPdfData(null);
-    call("parse_ubl", { xml: doc.xml })
+    fetchXmlContent(client, doc.xml)
+      .then((xml) => call("parse_ubl", { xml }))
       .then((ubl) => setPdfData(ublToIncomingPdfData(ubl as ParsedUbl, doc)))
       .catch(() => setPdfData(null));
-  }, [doc.xml, doc.id, call]);
+  }, [doc.xml, doc.id, call, client]);
 
   if (!pdfData) {
     return <div className="flex items-center justify-center h-full text-muted-foreground text-sm">Parsing document…</div>;

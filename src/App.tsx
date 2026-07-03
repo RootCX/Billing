@@ -50,7 +50,10 @@ function Shell({ user, logout }: { user: any; logout: () => void }) {
         client_contact_name: "", client_contact_email: "",
         line_items: [], references: [],
         internal_notes: "", terms: "",
-        subtotal: 0, total_tax: 0, total: 0,
+        subtotal: 0, total_tax: 0,
+        tax_currency: "", tax_amount_in_tax_currency: 0,
+        tax_exchange_rate: 0, tax_exchange_rate_date: "",
+        total: 0,
       });
       setView({ type: "detail", invoiceId: invoice.id });
     } catch (e: any) {

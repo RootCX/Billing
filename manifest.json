@@ -1,7 +1,7 @@
 {
   "appId": "billing",
   "name": "Billing",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "icon": "assets/icon.png",
   "description": "Professional invoicing and billing management",
   "dataContract": [
@@ -52,12 +52,17 @@
         { "name": "terms", "type": "text" },
         { "name": "subtotal", "type": "number" },
         { "name": "total_tax", "type": "number" },
+        { "name": "tax_currency", "type": "text" },
+        { "name": "tax_amount_in_tax_currency", "type": "number" },
+        { "name": "tax_exchange_rate", "type": "number" },
+        { "name": "tax_exchange_rate_date", "type": "date" },
         { "name": "total", "type": "number" },
         { "name": "document_type", "type": "text", "enum_values": ["invoice", "credit_note"] },
         { "name": "corrected_invoice_id", "type": "entity_link", "references": { "entity": "invoice", "field": "id" } },
         { "name": "corrected_invoice_number", "type": "text" },
         { "name": "corrected_invoice_date", "type": "date" },
-        { "name": "credit_reason", "type": "text" }
+        { "name": "credit_reason", "type": "text" },
+        { "name": "source_id", "type": "text" }
       ]
     },
     {

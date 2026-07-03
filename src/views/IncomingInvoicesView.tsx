@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, lazy, Suspense } from "react";
 import { useAppCollection, useIntegration, useRuntimeClient, type WhereClause } from "@rootcx/sdk";
-import { getPdfAttachment, peppolStorageUrl } from "../components/IncomingPdfPreview";
+import { getPdfAttachment, peppolStorageUrl, fetchXmlContent } from "../components/IncomingPdfPreview";
 import {
   PageHeader, DataTable, EmptyState, Badge, Button, toast,
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -198,6 +198,15 @@ const IncomingPdfPreview = lazy(() => import("../components/IncomingPdfPreview")
 function IncomingDocumentPreview({ doc }: { doc: IncomingDocument }) {
   const [showXml, setShowXml] = useState(false);
   const [copied, setCopied]   = useState(false);
+  const [xmlContent, setXmlContent] = useState<string | null>(null);
+  const client = useRuntimeClient();
+
+  useEffect(() => {
+    if (!doc.xml) return;
+    fetchXmlContent(client, doc.xml)
+      .then(setXmlContent)
+      .catch(() => setXmlContent(null));
+  }, [doc.xml, client]);
 
   const handleCopy = async (text: string) => {
     await navigator.clipboard.writeText(text);
@@ -223,7 +232,7 @@ function IncomingDocumentPreview({ doc }: { doc: IncomingDocument }) {
               <IconFileText className="h-3.5 w-3.5" />
               {showXml ? "Hide" : "View"} UBL XML
             </button>
-            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => handleCopy(doc.xml)}>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => handleCopy(xmlContent ?? doc.xml)}>
               {copied
                 ? <><IconCheck className="h-3.5 w-3.5 mr-1 text-emerald-600" />Copied!</>
                 : <><IconCopy className="h-3.5 w-3.5 mr-1" />Copy XML</>
@@ -232,7 +241,7 @@ function IncomingDocumentPreview({ doc }: { doc: IncomingDocument }) {
           </div>
           {showXml && (
             <pre className="max-h-80 overflow-auto rounded-md border bg-slate-50 p-3 text-[11px] leading-relaxed font-mono text-slate-500 whitespace-pre-wrap break-all">
-              {doc.xml}
+              {xmlContent ?? "Loading…"}
             </pre>
           )}
         </div>

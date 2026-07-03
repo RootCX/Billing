@@ -42,6 +42,10 @@ export interface Invoice {
   terms: string;
   subtotal: number;
   total_tax: number;
+  tax_currency?: string;
+  tax_amount_in_tax_currency?: number;
+  tax_exchange_rate?: number;
+  tax_exchange_rate_date?: string;
   total: number;
   // Credit-note support. `document_type` defaults to "invoice" when absent
   // (older records predate the field). For credit notes, the corrected_* fields
