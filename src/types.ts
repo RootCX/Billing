@@ -146,14 +146,15 @@ export function contactDisplayName(c: Contact): string {
 }
 
 export function computeTotals(items: LineItem[]) {
+  const round2 = (v: number) => Math.round(v * 100) / 100;
   let subtotal = 0;
   let totalTax = 0;
   for (const item of items) {
     const { subtotal: s, tax: t } = computeLineItem(item);
-    subtotal += s;
-    totalTax += t;
+    subtotal = round2(subtotal + s);
+    totalTax = round2(totalTax + t);
   }
-  return { subtotal, totalTax, total: subtotal + totalTax };
+  return { subtotal, totalTax, total: round2(subtotal + totalTax) };
 }
 
 export const REFERENCE_TYPE_LABELS: Record<ReferenceType, string> = {

@@ -97,15 +97,17 @@ export const STATUS_STYLES: Record<string, { bg: string; text: string; label: st
   cancelled: { bg: "#f3f4f6", text: "#6b7280", label: "CANCELLED" },
 };
 
+const round2 = (v: number) => Math.round(v * 100) / 100;
+
 export function computeLineItem(item: LineItem) {
   const quantity = Number(item.quantity) || 0;
   const unitPrice = Number(item.unit_price) || 0;
   const discount = Number(item.discount) || 0;
   const taxRate = Number(item.tax_rate) || 0;
-  const gross = quantity * unitPrice;
-  const discounted = gross * (1 - discount / 100);
-  const tax = discounted * (taxRate / 100);
-  return { subtotal: discounted, tax, total: discounted + tax };
+  const gross = round2(quantity * unitPrice);
+  const discounted = round2(gross * (1 - discount / 100));
+  const tax = round2(discounted * (taxRate / 100));
+  return { subtotal: discounted, tax, total: round2(discounted + tax) };
 }
 
 export function formatCurrency(amount: number, currency: string) {

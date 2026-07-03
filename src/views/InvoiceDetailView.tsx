@@ -103,8 +103,11 @@ export default function InvoiceDetailView({ invoiceId, onBack, onDeleted, onOpen
 
   const updateDraft = (patch: Partial<Invoice>) =>
     setDraft((prev) => {
-      const { subtotal, totalTax, total } = computeTotals((patch.line_items ?? prev.line_items ?? []) as LineItem[]);
-      return { ...prev, ...patch, subtotal, total_tax: totalTax, total };
+      if ("line_items" in patch) {
+        const { subtotal, totalTax, total } = computeTotals((patch.line_items ?? []) as LineItem[]);
+        return { ...prev, ...patch, subtotal, total_tax: totalTax, total };
+      }
+      return { ...prev, ...patch };
     });
 
   const handleSave = async () => {
