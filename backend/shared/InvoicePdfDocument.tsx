@@ -142,9 +142,9 @@ export default function InvoicePdfDocument({ invoice, seller, documentTitle, pay
 
   const creditNote = isCreditNote(invoice);
   const rows = lineItems.map((item) => ({ item, ...computeLineItem(item) }));
-  const subtotal = rows.reduce((a, r) => a + r.subtotal, 0);
-  const totalTax = rows.reduce((a, r) => a + r.tax, 0);
-  const total = subtotal + totalTax;
+  const subtotal = invoice.subtotal ?? rows.reduce((a, r) => a + r.subtotal, 0);
+  const totalTax = invoice.total_tax ?? rows.reduce((a, r) => a + r.tax, 0);
+  const total = invoice.total ?? subtotal + totalTax;
 
   const notes = invoice.internal_notes === FIELD_NONE ? null : (invoice.internal_notes || seller?.default_notes);
   const terms = invoice.terms === FIELD_NONE ? null : (invoice.terms || seller?.default_terms);
