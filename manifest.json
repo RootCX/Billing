@@ -1,7 +1,7 @@
 {
   "appId": "billing",
   "name": "Billing",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "icon": "assets/icon.png",
   "description": "Professional invoicing and billing management",
   "dataContract": [

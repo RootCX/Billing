@@ -389,7 +389,8 @@ export default function IncomingInvoicesView() {
         const { triggerBlobDownload } = await import("../lib/triggerBlobDownload");
         triggerBlobDownload(blob, pdfAttachment.filename || invoicePdfFilename({ ...doc, invoice_number: doc.document_number }));
       } else {
-        const ubl = await peppolCall("parse_ubl", { xml: doc.xml });
+        const xml = await fetchXmlContent(client, doc.xml);
+        const ubl = await peppolCall("parse_ubl", { xml });
         const { ublToIncomingPdfData } = await import("@shared/incoming-types");
         const data = ublToIncomingPdfData(ubl as ParsedUbl, doc);
         const { downloadIncomingPdf } = await import("../lib/downloadIncomingPdf");
