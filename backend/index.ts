@@ -6,6 +6,7 @@ const APP_ID = "billing";
 const PEPPOL_APP_ID = "peppol";
 const MAX_EXPORT = 5000;
 const MAX_ZIP_SIZE_BYTES = 250 * 1024 * 1024;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 let runtimeUrl = "";
 
@@ -63,6 +64,45 @@ async function apiBinary(path: string, token: string): Promise<Buffer> {
   });
   if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
   return Buffer.from(await res.arrayBuffer());
+}
+
+function isFileId(value: unknown): value is string {
+  return typeof value === "string" && UUID_RE.test(value);
+}
+
+async function downloadStorageFile(
+  appId: string,
+  fileId: string,
+  token: string | undefined,
+  ctx: any,
+): Promise<{ name?: string; contentType?: string; content: Buffer }> {
+  if (token) {
+    return {
+      content: await apiBinary(`/api/v1/apps/${appId}/storage/${fileId}`, token),
+    };
+  }
+
+  if (typeof ctx?.downloadFile !== "function") {
+    throw new Error("storage download is not available in this RootCX worker");
+  }
+
+  const file = await ctx.downloadFile(appId, fileId);
+  return {
+    name: file?.name,
+    contentType: file?.contentType,
+    content: Buffer.from(file?.content ?? []),
+  };
+}
+
+async function resolveXml(xmlField: unknown, token: string | undefined, ctx: any): Promise<string> {
+  if (typeof xmlField !== "string" || !xmlField) {
+    throw new Error("missing XML");
+  }
+  if (!isFileId(xmlField)) {
+    return xmlField;
+  }
+  const file = await downloadStorageFile(PEPPOL_APP_ID, xmlField, token, ctx);
+  return file.content.toString("utf8");
 }
 
 // ─── v2 IPC helpers (Core v0.20+, no token — uses ctx.sql) ──────────────────
@@ -280,6 +320,11 @@ async function startGenericExport(params: StartExportParams, caller: any, ctx: a
   });
 
   const exportPayload = { type: def.jobType, export_id: exportRec.id, where, orderBy, order };
+  if (typeof ctx?.enqueueJob === "function") {
+    const queued = await ctx.enqueueJob(exportPayload);
+    return { export_id: exportRec.id, job_id: queued?.msgId, total_count: total };
+  }
+
   try {
     await runJob(exportPayload, caller, ctx);
   } catch (e: any) {
@@ -360,7 +405,10 @@ async function runGenericExport(
       if (items.length === 0) break;
 
       for (const item of items) {
-        if (generated >= MAX_EXPORT) { done = true; break; }
+        if (generated >= MAX_EXPORT) {
+          done = true;
+          break;
+        }
 
         try {
           const result = await renderItem(item, token, ctx);
@@ -373,12 +421,14 @@ async function runGenericExport(
           }
           usedNames.add(fileName);
           zip.file(fileName, result.pdfBuf);
+          generated++;
         } catch (e: any) {
           log.warn(`${opts.zipPrefix} ${item.invoice_number || item.document_number || item.id}: ${e.message}`);
         }
 
-        generated++;
-        if (generated % opts.progressInterval === 0) await patchExport({ generated_count: generated });
+        if (generated > 0 && generated % opts.progressInterval === 0) {
+          await patchExport({ generated_count: generated });
+        }
       }
 
       if (items.length < opts.batchSize) break;
@@ -386,6 +436,9 @@ async function runGenericExport(
     }
 
     await patchExport({ generated_count: generated });
+    if (generated === 0) {
+      throw new Error(`No PDFs could be generated for the selected ${opts.zipPrefix}`);
+    }
 
     const zipBuf: Buffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
     if (zipBuf.byteLength > MAX_ZIP_SIZE_BYTES) {
@@ -441,18 +494,25 @@ async function runIncomingExport(payload: RunExportPayload, caller: any, ctx: an
     { exportCollection: "incoming_export", queryApp: PEPPOL_APP_ID, queryCollection: "incoming_documents", batchSize: 50, zipPrefix: "incoming", defaultOrderBy: "issue_date", progressInterval: 10 },
     async (doc, tok, c) => {
       const pdfAttachment = (doc.attachments ?? []).find(
-        (a: any) => a.mimeCode === "application/pdf" && a.fileId,
+        (a: any) => a.mimeCode === "application/pdf" && (a.fileId || a.base64Content),
       );
       const baseName = (doc.document_number || doc.id).replace(/[^A-Za-z0-9._-]+/g, "_");
 
-      if (pdfAttachment && tok) {
-        const pdfBuf = await apiBinary(`/api/v1/apps/${PEPPOL_APP_ID}/storage/${pdfAttachment.fileId}`, tok);
-        return { fileName: `${baseName}.pdf`, pdfBuf };
+      if (pdfAttachment?.fileId) {
+        const file = await downloadStorageFile(PEPPOL_APP_ID, pdfAttachment.fileId, tok, c);
+        return { fileName: safePdfFilename(pdfAttachment.filename, baseName), pdfBuf: file.content };
+      }
+
+      if (pdfAttachment?.base64Content) {
+        return {
+          fileName: safePdfFilename(pdfAttachment.filename, baseName),
+          pdfBuf: Buffer.from(pdfAttachment.base64Content, "base64"),
+        };
       }
 
       if (!doc.xml) return null;
 
-      const xml = stripEmbeddedBinaries(doc.xml);
+      const xml = stripEmbeddedBinaries(await resolveXml(doc.xml, tok, c));
       const ubl: ParsedUbl = tok
         ? await api("POST", `/api/v1/integrations/${PEPPOL_APP_ID}/actions/parse_ubl`, tok, { xml })
         : await c.callIntegration(PEPPOL_APP_ID, "parse_ubl", { xml });
@@ -468,4 +528,16 @@ function stripEmbeddedBinaries(xml: string): string {
     /(<(?:[a-z0-9]+:)?EmbeddedDocumentBinaryObject[^>]*>)[^<]*/gi,
     "$1",
   );
+}
+
+function safePdfFilename(name: unknown, fallbackBase: string): string {
+  const raw = typeof name === "string" && name.trim() ? name.trim() : `${fallbackBase}.pdf`;
+  const safe = raw.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
+  if (!safe) {
+    return `${fallbackBase}.pdf`;
+  }
+  if (safe.toLowerCase().endsWith(".pdf")) {
+    return safe;
+  }
+  return `${safe}.pdf`;
 }
