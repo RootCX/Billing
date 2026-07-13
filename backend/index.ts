@@ -1,11 +1,16 @@
-import JSZip from "jszip";
+import archiver from "archiver";
+import { createWriteStream } from "node:fs";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { finished } from "node:stream/promises";
 import { renderInvoicePdf, invoicePdfFilename, type Invoice, type SellerSettings } from "./pdf/renderInvoicePdf.tsx";
 import { ublToIncomingPdfData, type ParsedUbl } from "./shared/incoming-types";
 
 const APP_ID = "billing";
 const PEPPOL_APP_ID = "peppol";
 const MAX_EXPORT = 5000;
-const MAX_ZIP_SIZE_BYTES = 250 * 1024 * 1024;
+const MAX_ZIP_SIZE_BYTES = 64 * 1024 * 1024;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 let runtimeUrl = "";
@@ -240,6 +245,14 @@ async function sqlUpdate(
   await ctx.sql(q, params);
 }
 
+async function uploadExportZip(ctx: any, zipPath: string, fileName: string): Promise<string> {
+  if (typeof ctx?.uploadFile !== "function") {
+    throw new Error("storage upload is not available in this RootCX worker");
+  }
+  const fileId = await ctx.uploadFile(Bun.file(zipPath), fileName, "application/zip");
+  return JSON.stringify({ kind: "storage", appId: APP_ID, fileId });
+}
+
 // ─── Export logic ────────────────────────────────────────────────────────────
 
 interface ExportDef {
@@ -251,17 +264,88 @@ interface ExportDef {
   label: string;
 }
 
+interface ExportRecord {
+  id: string;
+  status: "pending" | "running" | "completed" | "failed";
+  total_count?: number;
+  generated_count?: number;
+}
+
+interface CreatedExport {
+  id: string;
+  total_count: number;
+  created: boolean;
+}
+
+interface ExportOptions {
+  exportCollection: string;
+  queryApp: string;
+  queryCollection: string;
+  batchSize: number;
+  zipPrefix: string;
+  defaultOrderBy: string;
+  progressInterval: number;
+}
+
 interface StartExportParams {
   where?: unknown;
   orderBy?: string;
   order?: "asc" | "desc";
 }
 
-async function startGenericExport(params: StartExportParams, caller: any, ctx: any, def: ExportDef) {
+async function createExportOnce(
+  ctx: any,
+  def: ExportDef,
+  filter: Record<string, unknown>,
+  total: number,
+): Promise<CreatedExport> {
+  const table = `${escapeIdent(APP_ID)}.${escapeIdent(def.exportCollection)}`;
+  const result = await ctx.sql(
+    `WITH mutex AS MATERIALIZED (
+       SELECT pg_advisory_xact_lock(hashtext($1))
+     ), existing AS MATERIALIZED (
+       SELECT id, total_count FROM ${table}, mutex
+        WHERE status IN ('pending', 'running') LIMIT 1
+     ), created AS (
+       INSERT INTO ${table}
+         (status, filter, total_count, generated_count, file_name, file_data, file_size, error_message)
+       SELECT 'pending', $2::jsonb, $3, 0, '', '', 0, '' FROM mutex
+        WHERE NOT EXISTS (SELECT 1 FROM existing)
+       RETURNING id, total_count
+     )
+     SELECT id::text, total_count, false FROM existing
+     UNION ALL
+     SELECT id::text, total_count, true FROM created`,
+    [`${APP_ID}:${def.exportCollection}:active`, JSON.stringify(filter), total],
+  );
+  const row = result?.rows?.[0];
+  if (!row) throw new Error("Failed to create export record");
+  return { id: String(row[0]), total_count: Number(row[1]), created: Boolean(row[2]) };
+}
+
+async function startGenericExport(
+  params: StartExportParams,
+  caller: any,
+  ctx: any,
+  def: ExportDef,
+): Promise<Record<string, unknown>> {
   const token: string | undefined = caller?.authToken;
   const { where, orderBy = def.defaultOrderBy, order = "desc" } = params ?? {};
 
   if (token) {
+    for (const status of ["pending", "running"]) {
+      const active = await api(
+        "POST",
+        `/api/v1/apps/${APP_ID}/collections/${def.exportCollection}/query`,
+        token,
+        { where: { status }, limit: 1, offset: 0 },
+      );
+      const existing = active?.data?.[0];
+      if (existing) {
+        return { export_id: existing.id, total_count: Number(existing.total_count ?? 0), reused: true };
+      }
+    }
+
     const countProbe = await api(
       "POST",
       `/api/v1/apps/${def.queryApp}/collections/${def.queryCollection}/query`,
@@ -308,16 +392,15 @@ async function startGenericExport(params: StartExportParams, caller: any, ctx: a
     throw new Error(`Export too large: ${total} ${def.label} (max ${MAX_EXPORT}). Please narrow the filter.`);
   }
 
-  const exportRec = await ctx.collection(def.exportCollection).insert({
-    status: "pending",
-    filter: { where: where ?? null, orderBy, order },
-    total_count: total,
-    generated_count: 0,
-    file_name: "",
-    file_data: "",
-    file_size: 0,
-    error_message: "",
-  });
+  const exportRec = await createExportOnce(
+    ctx,
+    def,
+    { where: where ?? null, orderBy, order },
+    total,
+  );
+  if (!exportRec.created) {
+    return { export_id: exportRec.id, total_count: exportRec.total_count, reused: true };
+  }
 
   const exportPayload = { type: def.jobType, export_id: exportRec.id, where, orderBy, order };
   if (typeof ctx?.enqueueJob === "function") {
@@ -336,11 +419,14 @@ async function startGenericExport(params: StartExportParams, caller: any, ctx: a
   return { export_id: exportRec.id, total_count: total };
 }
 
-async function runJob(payload: any, caller: any, ctx: any) {
+async function runJob(payload: any, caller: any, ctx: any): Promise<unknown> {
   switch (payload?.type) {
-    case "run_export": return runExport(payload, caller, ctx);
-    case "run_incoming_export": return runIncomingExport(payload, caller, ctx);
-    default: throw new Error(`unknown job type: ${payload?.type}`);
+    case "run_export":
+      return runExport(payload, caller, ctx);
+    case "run_incoming_export":
+      return runIncomingExport(payload, caller, ctx);
+    default:
+      throw new Error(`unknown job type: ${payload?.type}`);
   }
 }
 
@@ -353,34 +439,62 @@ interface RunExportPayload {
 
 type ItemRenderer = (item: any, token: string | undefined, ctx: any) => Promise<{ fileName: string; pdfBuf: Buffer } | null>;
 
+async function getExportRecord(
+  token: string | undefined,
+  ctx: any,
+  collection: string,
+  id: string,
+): Promise<ExportRecord | null> {
+  if (token) {
+    return api("GET", `/api/v1/apps/${APP_ID}/collections/${collection}/${id}`, token);
+  }
+  return ctx.collection(collection).findOne({ id });
+}
+
 async function runGenericExport(
   payload: RunExportPayload,
   caller: any,
   ctx: any,
-  opts: { exportCollection: string; queryApp: string; queryCollection: string; batchSize: number; zipPrefix: string; defaultOrderBy: string; progressInterval: number },
+  opts: ExportOptions,
   renderItem: ItemRenderer,
 ) {
   const token: string | undefined = caller?.authToken;
   const { export_id: exportId, where, orderBy = opts.defaultOrderBy, order = "desc" } = payload;
 
-  const patchExport = async (fields: Record<string, unknown>) => {
+  const current = await getExportRecord(token, ctx, opts.exportCollection, exportId);
+  if (!current) throw new Error(`Export ${exportId} does not exist`);
+  if (current.status === "completed" || current.status === "failed") {
+    return { export_id: exportId, generated: Number(current.generated_count ?? 0), status: current.status };
+  }
+
+  const patchExport = async (fields: Record<string, unknown>, bestEffort = false) => {
     try {
       if (token) {
         await api("PATCH", `/api/v1/apps/${APP_ID}/collections/${opts.exportCollection}/${exportId}`, token, fields);
       } else {
         await sqlUpdate(ctx, APP_ID, opts.exportCollection, exportId, fields);
       }
-    } catch (e: any) {
-      log.warn(`patch ${opts.exportCollection}: ${e.message}`);
+    } catch (error: any) {
+      if (!bestEffort) throw error;
+      log.warn(`patch ${opts.exportCollection}: ${error.message}`);
     }
   };
 
-  try {
-    await patchExport({ status: "running" });
+  const workDir = await mkdtemp(join(tmpdir(), "billing-export-"));
+  const zipPath = join(workDir, "export.zip");
+  const output = createWriteStream(zipPath);
+  const zip = archiver("zip", { zlib: { level: 0 } });
+  zip.on("error", (error) => output.destroy(error));
+  zip.on("warning", (error) => output.destroy(error));
+  zip.pipe(output);
 
-    const zip = new JSZip();
+  try {
+    await patchExport({ status: "running", generated_count: 0, error_message: "" });
+
     const usedNames = new Set<string>();
+    const failures: string[] = [];
     let generated = 0;
+    let processed = 0;
     let offset = 0;
     let done = false;
 
@@ -412,7 +526,7 @@ async function runGenericExport(
 
         try {
           const result = await renderItem(item, token, ctx);
-          if (!result) continue;
+          if (!result) throw new Error("document has neither a PDF attachment nor XML");
 
           let { fileName } = result;
           if (usedNames.has(fileName)) {
@@ -420,14 +534,19 @@ async function runGenericExport(
             fileName = `${base}_${item.id.slice(0, 8)}.pdf`;
           }
           usedNames.add(fileName);
-          zip.file(fileName, result.pdfBuf);
+          const pdfPath = join(workDir, `${String(processed).padStart(6, "0")}.pdf`);
+          await writeFile(pdfPath, result.pdfBuf);
+          zip.file(pdfPath, { name: fileName });
           generated++;
         } catch (e: any) {
-          log.warn(`${opts.zipPrefix} ${item.invoice_number || item.document_number || item.id}: ${e.message}`);
+          const documentId = item.invoice_number || item.document_number || item.id;
+          failures.push(`${documentId}: ${String(e?.message ?? e)}`);
+          log.warn(`${opts.zipPrefix} ${documentId}: ${e.message}`);
         }
+        processed++;
 
-        if (generated > 0 && generated % opts.progressInterval === 0) {
-          await patchExport({ generated_count: generated });
+        if (processed % opts.progressInterval === 0) {
+          await patchExport({ generated_count: generated }, true);
         }
       }
 
@@ -435,32 +554,45 @@ async function runGenericExport(
       offset += opts.batchSize;
     }
 
-    await patchExport({ generated_count: generated });
-    if (generated === 0) {
-      throw new Error(`No PDFs could be generated for the selected ${opts.zipPrefix}`);
+    await patchExport({ generated_count: generated }, true);
+    const expected = Number(current.total_count ?? 0);
+    if (expected > 0 && processed !== expected) {
+      throw new Error(`Export source changed while running: expected ${expected} documents, read ${processed}`);
     }
+    if (failures.length > 0) {
+      const examples = failures.slice(0, 3).join("; ");
+      throw new Error(`${failures.length} of ${processed} documents failed. ${examples}`);
+    }
+    if (generated === 0) throw new Error(`No PDFs could be generated for the selected ${opts.zipPrefix}`);
 
-    const zipBuf: Buffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
-    if (zipBuf.byteLength > MAX_ZIP_SIZE_BYTES) {
-      throw new Error(`ZIP too large (${(zipBuf.byteLength / 1024 / 1024).toFixed(1)} MB). Narrow the filter.`);
+    await zip.finalize();
+    await finished(output);
+    const { size: zipSize } = await stat(zipPath);
+    if (zipSize > MAX_ZIP_SIZE_BYTES) {
+      throw new Error(`ZIP too large (${(zipSize / 1024 / 1024).toFixed(1)} MB). Narrow the filter.`);
     }
 
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
     const fileName = `${opts.zipPrefix}_${stamp}.zip`;
-    const fileData = `data:application/zip;base64,${zipBuf.toString("base64")}`;
+    const fileData = await uploadExportZip(ctx, zipPath, fileName);
 
     await patchExport({
       status: "completed",
       generated_count: generated,
       file_name: fileName,
       file_data: fileData,
-      file_size: zipBuf.byteLength,
+      file_size: zipSize,
+      error_message: "",
     });
 
-    return { export_id: exportId, generated, file_size: zipBuf.byteLength };
+    return { export_id: exportId, generated, file_size: zipSize };
   } catch (e: any) {
     await patchExport({ status: "failed", error_message: String(e?.message ?? e) }).catch(() => {});
     throw e;
+  } finally {
+    zip.abort();
+    output.destroy();
+    await rm(workDir, { recursive: true, force: true });
   }
 }
 

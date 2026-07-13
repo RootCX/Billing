@@ -2,7 +2,7 @@
   "name": "billing-backend",
   "dependencies": {
     "@react-pdf/renderer": "^4.5.1",
-    "jszip": "^3.10.1",
+    "archiver": "^7.0.1",
     "react": "^19.2.5"
   },
   "private": true,

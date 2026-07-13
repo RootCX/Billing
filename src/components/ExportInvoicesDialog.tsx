@@ -39,7 +39,33 @@ interface Props {
   config?: ExportConfig;
 }
 
+function exportDescription(
+  status: string,
+  total: number,
+  generated: number,
+  label: string,
+): string {
+  if (status === "completed") {
+    return `Your ZIP with ${generated} ${label}${generated !== 1 ? "s" : ""} is ready.`;
+  }
+  if (status === "failed") {
+    return "Something went wrong.";
+  }
+  if (total > 0) {
+    return `Generating ${total} PDF${total !== 1 ? "s" : ""} and building the ZIP…`;
+  }
+  return "Preparing export…";
+}
+
+function downloadError(error: unknown): string {
+  if (typeof error === "object" && error !== null && "message" in error) {
+    return String(error.message) || "Download failed";
+  }
+  return "Download failed";
+}
+
 export default function ExportInvoicesDialog({ exportId, onClose, config = INVOICE_EXPORT }: Props) {
+  const client = useRuntimeClient();
   const { data: exportRec, refetch } = useAppRecord<InvoiceExport>(APP_ID, config.entityName, exportId);
   const downloadedRef = useRef<string | null>(null);
 
@@ -53,6 +79,12 @@ export default function ExportInvoicesDialog({ exportId, onClose, config = INVOI
   const isFailed = status === "failed";
   const progress = total > 0 ? Math.min(100, Math.round((generated / total) * 100)) : 0;
 
+  function downloadAgain(): void {
+    void triggerDownload(fileData, fileName, client).catch((error) => {
+      toast.error(downloadError(error));
+    });
+  }
+
   useEffect(() => {
     if (!exportId || isDone || isFailed) return;
     const id = setInterval(refetch, POLL_MS);
@@ -63,13 +95,17 @@ export default function ExportInvoicesDialog({ exportId, onClose, config = INVOI
     if (!exportRec || downloadedRef.current === exportRec.id) return;
     if (isDone && fileData) {
       downloadedRef.current = exportRec.id;
-      triggerDownload(fileData, fileName);
-      toast.success(`Exported ${generated} ${config.label}${generated !== 1 ? "s" : ""}`);
+      triggerDownload(fileData, fileName, client)
+        .then(() => toast.success(`Exported ${generated} ${config.label}${generated !== 1 ? "s" : ""}`))
+        .catch((error) => {
+          downloadedRef.current = null;
+          toast.error(downloadError(error));
+        });
     } else if (isFailed) {
       downloadedRef.current = exportRec.id;
       toast.error(exportRec.error_message || "Export failed");
     }
-  }, [exportRec, isDone, isFailed, fileData, fileName, generated, config.label]);
+  }, [exportRec, isDone, isFailed, fileData, fileName, generated, config.label, client]);
 
   return (
     <Dialog open={exportId !== null} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -77,13 +113,7 @@ export default function ExportInvoicesDialog({ exportId, onClose, config = INVOI
         <DialogHeader>
           <DialogTitle>Export {config.label}s</DialogTitle>
           <DialogDescription>
-            {isDone
-              ? `Your ZIP with ${generated} ${config.label}${generated !== 1 ? "s" : ""} is ready.`
-              : isFailed
-              ? "Something went wrong."
-              : total > 0
-              ? `Generating ${total} PDF${total !== 1 ? "s" : ""} and building the ZIP…`
-              : "Preparing export…"}
+            {exportDescription(status, total, generated, config.label)}
           </DialogDescription>
         </DialogHeader>
 
@@ -123,7 +153,7 @@ export default function ExportInvoicesDialog({ exportId, onClose, config = INVOI
 
         <DialogFooter>
           {isDone && fileData && (
-            <Button variant="outline" onClick={() => triggerDownload(fileData, fileName)}>
+            <Button variant="outline" onClick={downloadAgain}>
               <IconDownload className="h-4 w-4 mr-2" />
               Download again
             </Button>
@@ -162,11 +192,40 @@ export function useExport(config: ExportConfig = INVOICE_EXPORT) {
 
 export const useInvoiceExport = () => useExport(INVOICE_EXPORT);
 
-function triggerDownload(dataUrl: string, fileName: string) {
+async function triggerDownload(fileData: string, fileName: string, client: ReturnType<typeof useRuntimeClient>) {
   const a = document.createElement("a");
-  a.href = dataUrl;
+  a.href = await resolveDownloadUrl(fileData, client);
   a.download = fileName;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+  if (a.href.startsWith("blob:")) {
+    setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
+  }
+}
+
+async function resolveDownloadUrl(fileData: string, client: ReturnType<typeof useRuntimeClient>): Promise<string> {
+  if (fileData.startsWith("data:")) {
+    return fileData;
+  }
+
+  let pointer: { kind?: string; appId?: string; fileId?: string };
+  try {
+    pointer = JSON.parse(fileData);
+  } catch {
+    throw new Error("Export file pointer is invalid");
+  }
+
+  if (pointer.kind !== "storage" || !pointer.appId || !pointer.fileId) {
+    throw new Error("Export file pointer is invalid");
+  }
+
+  const token = client.getAccessToken();
+  const res = await fetch(`${client.getBaseUrl()}/api/v1/apps/${encodeURIComponent(pointer.appId)}/storage/${encodeURIComponent(pointer.fileId)}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    throw new Error(`Download failed (${res.status})`);
+  }
+  return URL.createObjectURL(await res.blob());
 }
