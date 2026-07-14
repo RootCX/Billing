@@ -11,8 +11,8 @@ import {
 } from "@rootcx/ui";
 import { IconArrowLeft, IconDeviceFloppy, IconNetwork, IconPrinter, IconTag, IconDotsVertical, IconTrash, IconReceiptRefund } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import type { Invoice, InvoiceStatus, LineItem, PeppolRegistration, SellerSettings } from "../types";
-import { computeTotals, FIELD_NONE, isCreditNote, todayISO } from "../types";
+import type { Invoice, InvoiceStatus, LineItem, PeppolRegistration, PeppolSendLog, PeppolSendState, SellerSettings } from "../types";
+import { computeTotals, FIELD_NONE, getPeppolSendState, isCreditNote, todayISO } from "../types";
 import InvoiceDetailsTab from "../components/InvoiceDetailsTab";
 import InvoiceComplianceTab from "../components/InvoiceComplianceTab";
 const InvoicePreview = lazy(() => import("../components/InvoicePreview"));
@@ -27,6 +27,18 @@ const STATUS_CONFIG: Record<InvoiceStatus, { label: string; className: string }>
   overdue:   { label: "Overdue",   className: "bg-red-50 text-red-700 border-red-200" },
   cancelled: { label: "Cancelled", className: "bg-zinc-100 text-zinc-400 border-zinc-200" },
 };
+
+function getPeppolDisabledReason(
+  sendState: PeppolSendState,
+  peppolActive: boolean,
+  complianceIssueCount: number,
+): string | null {
+  if (sendState === "pending") return "Peppol send in progress";
+  if (sendState === "sent") return "Already sent via Peppol";
+  if (!peppolActive) return "Peppol is not activated";
+  if (complianceIssueCount > 0) return "Fix compliance issues first";
+  return null;
+}
 
 const STATUSES: InvoiceStatus[] = ["draft", "sent", "paid", "overdue", "cancelled"];
 
@@ -85,9 +97,10 @@ export default function InvoiceDetailView({ invoiceId, onBack, onDeleted, onOpen
 
   const { data: invoice, loading, error, update, remove } = useAppRecord<Invoice>(APP_ID, "invoice", invoiceId);
 
-  // Peppol-sent invoices are locked — never editable or deletable
-  const { data: peppolLogs } = useAppCollection(APP_ID, "peppol_send_log", { where: { invoice_id: invoiceId }, limit: 1 });
-  const isEditable = (peppolLogs?.length ?? 0) === 0;
+  // Prevent edits while Peppol is processing or has accepted the invoice.
+  const { data: peppolLogs } = useAppCollection<PeppolSendLog>(APP_ID, "peppol_send_log", { where: { invoice_id: invoiceId } });
+  const peppolSendState = getPeppolSendState((peppolLogs ?? []).map((log) => log.status));
+  const isEditable = peppolSendState === "retryable";
 
   const [draft, setDraft]               = useState<Partial<Invoice>>({});
   const [saving, setSaving]             = useState(false);
@@ -219,10 +232,7 @@ export default function InvoiceDetailView({ invoiceId, onBack, onDeleted, onOpen
     ((draft.line_items ?? []).length === 0 ? 1 : 0);
 
   const showPeppol = isEditable && peppolActive && totalIssues === 0;
-  const peppolDisabledReason = !isEditable        ? "Already sent via Peppol"
-    : !peppolActive                               ? "Peppol is not activated"
-    : totalIssues > 0                             ? "Fix compliance issues first"
-    : null;
+  const peppolDisabledReason = getPeppolDisabledReason(peppolSendState, peppolActive, totalIssues);
 
   // Only drafts can be deleted — sent/paid/overdue/cancelled are immutable records
   const isDeletable = currentStatus === "draft";

@@ -8,6 +8,18 @@ export type PeppolRegStatus = "not_registered" | "pending" | "active" | "failed"
 export type PeppolSendStatus = "pending" | "sent" | "delivered" | "failed";
 export type InvoiceExportStatus = "pending" | "running" | "completed" | "failed";
 
+export function isSuccessfulPeppolSendStatus(status: PeppolSendStatus): boolean {
+  return status === "sent" || status === "delivered";
+}
+
+export type PeppolSendState = "retryable" | "pending" | "sent";
+
+export function getPeppolSendState(statuses: readonly PeppolSendStatus[]): PeppolSendState {
+  if (statuses.some(isSuccessfulPeppolSendStatus)) return "sent";
+  if (statuses.includes("pending")) return "pending";
+  return "retryable";
+}
+
 export interface InvoiceExport {
   id: string;
   status: InvoiceExportStatus;

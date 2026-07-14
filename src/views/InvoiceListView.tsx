@@ -5,7 +5,7 @@ import {
 } from "@rootcx/ui";
 import { IconPlus, IconFileInvoice, IconNetwork, IconDownload, IconLoader2 } from "@tabler/icons-react";
 import type { Invoice, InvoiceStatus, VatTreatment, PeppolSendLog } from "../types";
-import { formatCurrency, formatDate, isCreditNote } from "../types";
+import { formatCurrency, formatDate, isCreditNote, isSuccessfulPeppolSendStatus } from "../types";
 import {
   FilterBar, conditionToWhereClause,
   type Condition, type FieldDef,
@@ -112,7 +112,7 @@ export default function InvoiceListView({ onOpenInvoice, onNewInvoice }: Props) 
     where: invoiceIds.length > 0 ? { invoice_id: { $in: invoiceIds } } : { invoice_id: { $eq: "none" } },
   });
   const sentInvoiceIds = useMemo(
-    () => new Set((peppolLogs ?? []).filter((l) => l.status === "sent" || l.status === "delivered").map((l) => l.invoice_id)),
+    () => new Set((peppolLogs ?? []).filter((l) => isSuccessfulPeppolSendStatus(l.status)).map((l) => l.invoice_id)),
     [peppolLogs],
   );
 
