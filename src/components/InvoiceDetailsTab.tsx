@@ -4,11 +4,12 @@ import {
   Input, Label, Textarea, Button, Separator, Badge,
   Select, SelectTrigger, SelectContent, SelectItem, SelectValue,
   Popover, PopoverTrigger, PopoverContent,
+  Tooltip, TooltipTrigger, TooltipContent,
   FormDialog, toast,
 } from "@rootcx/ui";
 import {
   IconPlus, IconSearch, IconLink, IconLinkOff, IconUser, IconChevronDown,
-  IconEdit, IconX, IconFileText, IconTrash,
+  IconEdit, IconX, IconFileText, IconTrash, IconInfoCircle,
 } from "@tabler/icons-react";
 import { CountrySelect } from "./CountrySelect";
 
@@ -65,9 +66,9 @@ const OverrideField = ({ label, value, defaultValue, placeholder, emptyHint, min
     </div>
   );
 };
-import type { Invoice, LineItem, InvoiceReference, Customer, Contact } from "../types";
+import type { Invoice, LineItem, InvoiceReference, DocumentAllowance, Customer, Contact } from "../types";
 import {
-  formatCurrency, applyCustomerToDraft, CUSTOMER_FORM_FIELDS, CONTACT_FORM_FIELDS,
+  formatCurrency, computeDocumentTotals, computeVatBreakdown, applyCustomerToDraft, CUSTOMER_FORM_FIELDS, CONTACT_FORM_FIELDS,
   contactDisplayName,
 } from "../types";
 import LineItemDialog from "./LineItemDialog";
@@ -76,6 +77,18 @@ import LineItemRow from "./LineItemRow";
 import { cn } from "@/lib/utils";
 
 const APP_ID = "billing";
+
+/** Explanation on demand: the label carries the field, not a paragraph next to it. */
+const HelpTip = ({ text }: { text: string }) => (
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <button type="button" tabIndex={-1} className="text-muted-foreground/60 transition-colors hover:text-foreground">
+        <IconInfoCircle className="h-3.5 w-3.5" />
+      </button>
+    </TooltipTrigger>
+    <TooltipContent side="right" className="max-w-[240px] text-[11px] leading-relaxed">{text}</TooltipContent>
+  </Tooltip>
+);
 
 const CURRENCIES = ["EUR", "USD", "GBP", "CHF", "CAD", "AUD", "JPY"];
 const VAT_TREATMENTS = [
@@ -96,6 +109,13 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
   <div className="space-y-1 mb-3">
     <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
     {children}
+  </div>
+);
+
+const TotalRow = ({ label, amount, className }: { label: string; amount: string; className?: string }) => (
+  <div className={cn("flex justify-between text-muted-foreground", className)}>
+    <span>{label}</span>
+    <span className="font-mono">{amount}</span>
   </div>
 );
 
@@ -129,7 +149,25 @@ export default function InvoiceDetailsTab({ draft, onChange, sellerDefaultTerms 
     });
 
   const lineItems: LineItem[] = draft.line_items ?? [];
+  const allowances: DocumentAllowance[] = draft.allowances ?? [];
   const currency = draft.currency || "EUR";
+
+  // Computed here rather than read from the draft so the box can never lag behind
+  // an edit, and so it shows the discount/paid rows the stored fields don't carry.
+  const totals = computeDocumentTotals(lineItems, allowances, draft.prepaid_amount ?? 0);
+
+  // Recapped rate by rate only when several rates are in play — with one rate the
+  // "VAT" row already says everything. Its point is to make visible that a discount
+  // lowers the base of its own rate.
+  const vatBreakdown = computeVatBreakdown(lineItems, allowances).filter((line) => line.taxableAmount !== 0);
+  const showVatBreakdown = vatBreakdown.length > 1;
+
+  // A discount reduces the VAT base of its own rate, so it can only use a rate the
+  // lines actually charge — offering anything else would build an invalid document.
+  const lineTaxRates = [...new Set(lineItems.map((item) => Number(item.tax_rate) || 0))].sort((a, b) => a - b);
+
+  const patchAllowance = (id: string, patch: Partial<DocumentAllowance>) =>
+    onChange({ allowances: allowances.map((a) => (a.id === id ? { ...a, ...patch } : a)) });
 
   const linkedCustomer = linkedCustomerId
     ? (customers ?? []).find((c) => c.id === linkedCustomerId) ?? null
@@ -402,18 +440,131 @@ export default function InvoiceDetailsTab({ draft, onChange, sellerDefaultTerms 
         ))}
       </div>
 
+      <Button variant="outline" size="sm" className="w-full"
+        onClick={() => { setEditingItem(null); setLineItemDialogOpen(true); }}>
+        <IconPlus className="h-3.5 w-3.5 mr-2" />Add Line Item
+      </Button>
+
+      <Separator className="my-4" />
+
+      {/* ── Discounts & payments ────────────────────────────────────────────────
+          Two deductions that look alike and behave differently: a discount is taken
+          off before the VAT, a payment after it. The difference lives in a tooltip
+          and, above all, in the totals box below, where the VAT visibly moves or
+          not. Neither may be typed as a negative line: Peppol rejects a negative
+          unit price outright. */}
+      <SectionTitle>Discounts &amp; Payments</SectionTitle>
+
+      <div className="mb-3 space-y-2">
+        <div className="flex items-center gap-1.5">
+          <Label className="text-xs font-medium text-muted-foreground">Discount</Label>
+          <HelpTip text="A rebate, or a down payment you have already invoiced. The VAT is recharged on the reduced amount, so pick the rate it applied to." />
+        </div>
+
+        {allowances.map((allowance) => (
+          <div key={allowance.id} className="flex items-start gap-2 rounded-md border bg-muted/20 p-2">
+            <div className="grid flex-1 grid-cols-[1fr_68px] gap-2">
+              <Input
+                type="number" step="0.01" min="0"
+                value={allowance.amount || ""}
+                onChange={(e) => patchAllowance(allowance.id, { amount: Number(e.target.value) || 0 })}
+                className="h-8 text-sm font-mono" placeholder="0.00 excl. VAT"
+              />
+              <Select
+                value={String(allowance.tax_rate)}
+                onValueChange={(v) => patchAllowance(allowance.id, { tax_rate: Number(v) })}
+              >
+                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {lineTaxRates.map((rate) => (
+                    <SelectItem key={rate} value={String(rate)}>{rate}%</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                value={allowance.reason}
+                onChange={(e) => patchAllowance(allowance.id, { reason: e.target.value })}
+                className={cn("col-span-2 h-8 text-sm", !allowance.reason.trim() && "ring-1 ring-amber-400/60")}
+                placeholder="Reason, printed on the invoice"
+              />
+            </div>
+            <button
+              onClick={() => onChange({ allowances: allowances.filter((a) => a.id !== allowance.id) })}
+              className="mt-2 text-muted-foreground transition-colors hover:text-destructive"
+              title="Remove discount"
+            >
+              <IconTrash className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+
+        <Button
+          variant="outline" size="sm" className="w-full"
+          disabled={lineTaxRates.length === 0}
+          title={lineTaxRates.length === 0 ? "Add a line item first — a discount follows the VAT rate of the lines" : undefined}
+          onClick={() => onChange({
+            allowances: [...allowances, { id: crypto.randomUUID(), amount: 0, tax_rate: lineTaxRates[0], reason: "" }],
+          })}
+        >
+          <IconPlus className="h-3.5 w-3.5 mr-2" />Add discount
+        </Button>
+      </div>
+
+      <div className="mb-3 space-y-2">
+        <div className="flex items-center gap-1.5">
+          <Label className="text-xs font-medium text-muted-foreground">Already paid</Label>
+          <HelpTip text="Money already received for this invoice, VAT included. Only the amount due goes down — the VAT stays as invoiced." />
+        </div>
+        <Input
+          type="number"
+          step="0.01"
+          min="0"
+          value={draft.prepaid_amount ?? ""}
+          onChange={(e) => onChange({ prepaid_amount: Number(e.target.value) || 0 })}
+          className="h-8 text-sm font-mono"
+          placeholder="0.00 incl. VAT"
+        />
+        {(draft.prepaid_amount ?? 0) > 0 && (
+          <Input
+            value={draft.prepaid_reference ?? ""}
+            onChange={(e) => onChange({ prepaid_reference: e.target.value })}
+            className="h-8 text-sm"
+            placeholder="Payment reference, printed on the invoice"
+          />
+        )}
+      </div>
+
       {lineItems.length > 0 && (
-        <div className="text-right text-xs space-y-1 mb-3 border rounded-md p-3 bg-muted/30">
-          <div className="flex justify-between text-muted-foreground">
-            <span>Subtotal</span><span className="font-mono">{formatCurrency(draft.subtotal ?? 0, currency)}</span>
-          </div>
-          <div className="flex justify-between text-muted-foreground">
-            <span>Tax</span><span className="font-mono">{formatCurrency(draft.total_tax ?? 0, currency)}</span>
-          </div>
+        <div className="text-right text-xs space-y-1 mt-4 mb-3 border rounded-md p-3 bg-muted/30">
+          {/* Same wording, same order as the PDF and the Peppol document. */}
+          <TotalRow label="Subtotal excl. VAT" amount={formatCurrency(totals.subtotal, currency)} />
+          {totals.allowanceTotal > 0 && (
+            <>
+              <TotalRow label="Discounts" amount={`−${formatCurrency(totals.allowanceTotal, currency)}`} />
+              <TotalRow label="Total excl. VAT" amount={formatCurrency(totals.taxableAmount, currency)} />
+            </>
+          )}
+          {showVatBreakdown && vatBreakdown.map((line) => (
+            <TotalRow
+              key={line.taxRate}
+              label={`VAT ${line.taxRate}% on ${formatCurrency(line.taxableAmount, currency)}`}
+              amount={formatCurrency(line.taxAmount, currency)}
+            />
+          ))}
+          {!showVatBreakdown && <TotalRow label="VAT" amount={formatCurrency(totals.totalTax, currency)} />}
           <Separator className="my-1" />
-          <div className="flex justify-between font-semibold text-sm">
-            <span>Total</span><span className="font-mono">{formatCurrency(draft.total ?? 0, currency)}</span>
-          </div>
+          {totals.prepaidAmount > 0 && (
+            <>
+              <TotalRow label="Total incl. VAT" amount={formatCurrency(totals.total, currency)} />
+              <TotalRow label="Already paid" amount={`−${formatCurrency(totals.prepaidAmount, currency)}`} />
+              <Separator className="my-1" />
+            </>
+          )}
+          <TotalRow
+            label="Amount due"
+            amount={formatCurrency(totals.amountDue, currency)}
+            className="text-sm font-semibold text-foreground"
+          />
         </div>
       )}
 
@@ -466,11 +617,6 @@ export default function InvoiceDetailsTab({ draft, onChange, sellerDefaultTerms 
           </div>
         </div>
       )}
-
-      <Button variant="outline" size="sm" className="w-full"
-        onClick={() => { setEditingItem(null); setLineItemDialogOpen(true); }}>
-        <IconPlus className="h-3.5 w-3.5 mr-2" />Add Line Item
-      </Button>
 
       <Separator className="my-4" />
 

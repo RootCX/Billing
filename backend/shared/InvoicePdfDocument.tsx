@@ -1,7 +1,7 @@
 import React from "react";
 import { Document, Page, View, Text, Image, StyleSheet, Font } from "@react-pdf/renderer";
 import type { Invoice, LineItem, SellerSettings } from "./invoice-types";
-import { computeLineItem, formatCurrency, formatDate, FIELD_NONE, VAT_TREATMENT_LABELS, STATUS_STYLES, isCreditNote, documentTitleFor } from "./invoice-types";
+import { computeLineItem, computeVatBreakdown, formatCurrency, formatDate, FIELD_NONE, VAT_TREATMENT_LABELS, STATUS_STYLES, isCreditNote, documentTitleFor } from "./invoice-types";
 
 Font.registerHyphenationCallback((word) => [word]);
 
@@ -89,13 +89,13 @@ const s = StyleSheet.create({
   emptyText: { fontSize: 9, color: C.faint, fontStyle: "italic" },
 
   totalsWrap: { flexDirection: "row", justifyContent: "flex-end", marginTop: 8 },
-  totalsBox: { width: 200 },
+  totalsBox: { width: 240 },
   totalRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
-  totalLabel: { fontSize: 9, color: C.muted },
-  totalValue: { fontSize: 9, color: C.muted },
+  totalLabel: { fontSize: 9, color: C.muted, flex: 1, paddingRight: 8 },
+  totalValue: { fontSize: 9, color: C.muted, flexShrink: 0 },
   totalDivider: { borderTopWidth: 2, borderTopColor: C.ink, paddingTop: 6, marginTop: 2 },
-  totalMainLabel: { fontSize: 10, fontFamily: "Helvetica-Bold", color: C.ink },
-  totalMainValue: { fontSize: 13, fontFamily: "Helvetica-Bold", color: C.ink },
+  totalMainLabel: { fontSize: 10, fontFamily: "Helvetica-Bold", color: C.ink, flex: 1, paddingRight: 8 },
+  totalMainValue: { fontSize: 13, fontFamily: "Helvetica-Bold", color: C.ink, flexShrink: 0 },
 
   sectionDivider: { borderTopWidth: 0.5, borderTopColor: C.lineSoft, paddingTop: 16, marginTop: 16 },
   bankRow: { flexDirection: "row", gap: 32, marginTop: 6 },
@@ -115,6 +115,8 @@ const s = StyleSheet.create({
   },
   footerText: { fontSize: 7, color: C.faint, textAlign: "center" },
 });
+
+const round2 = (v: number) => Math.round(v * 100) / 100;
 
 const COL_W = {
   desc: "38%",
@@ -142,9 +144,24 @@ export default function InvoicePdfDocument({ invoice, seller, documentTitle, pay
 
   const creditNote = isCreditNote(invoice);
   const rows = lineItems.map((item) => ({ item, ...computeLineItem(item) }));
+  // Document level totals stay authoritative — an incoming document's stated totals
+  // must be reproduced, not recalculated from lines we reconstructed. The discount
+  // and payment figures are derived from them, never the other way round.
+  const allowances = invoice.allowances ?? [];
+  const allowanceTotal = round2(allowances.reduce((sum, a) => sum + (Number(a.amount) || 0), 0));
   const subtotal = invoice.subtotal ?? rows.reduce((a, r) => a + r.subtotal, 0);
   const totalTax = invoice.total_tax ?? rows.reduce((a, r) => a + r.tax, 0);
-  const total = invoice.total ?? subtotal + totalTax;
+  const taxableAmount = round2(subtotal - allowanceTotal);
+  const total = invoice.total ?? round2(taxableAmount + totalTax);
+  const prepaidAmount = round2(Number(invoice.prepaid_amount ?? 0));
+  const amountDue = round2(total - prepaidAmount);
+  // Recapped rate by rate only when several rates are in play — with one rate the
+  // VAT column of the table already says which one it is. And only when the recap
+  // adds up to the VAT of the document: on an incoming document, the stated total
+  // wins and a breakdown that contradicts it would be worse than none.
+  const vatBreakdown = computeVatBreakdown(lineItems, allowances).filter((line) => line.taxableAmount !== 0);
+  const breakdownTax = round2(vatBreakdown.reduce((sum, line) => sum + line.taxAmount, 0));
+  const showVatBreakdown = vatBreakdown.length > 1 && breakdownTax === round2(totalTax);
 
   const notes = invoice.internal_notes === FIELD_NONE ? null : (invoice.internal_notes || seller?.default_notes);
   const terms = invoice.terms === FIELD_NONE ? null : (invoice.terms || seller?.default_terms);
@@ -243,7 +260,9 @@ export default function InvoicePdfDocument({ invoice, seller, documentTitle, pay
               <Text style={s.emptyText}>No line items</Text>
             </View>
           ) : (
-            rows.map(({ item, total: rowTotal }) => (
+            // The amount column is the line net amount (EN16931 BT-131): VAT
+            // excluded, so the column adds up to the subtotal below it.
+            rows.map(({ item, subtotal: rowNet }) => (
               <View key={item.id} style={s.tableRow} wrap={false}>
                 <View style={{ width: COL_W.desc, paddingRight: 8 }}>
                   <Text style={s.cellProduct}>{item.product || "\u2014"}</Text>
@@ -254,7 +273,7 @@ export default function InvoicePdfDocument({ invoice, seller, documentTitle, pay
                 <Text style={[s.cellText, { width: COL_W.price, textAlign: "right" }]}>{formatCurrency(item.unit_price || 0, currency)}</Text>
                 <Text style={[s.cellText, { width: COL_W.disc, textAlign: "right" }]}>{item.discount > 0 ? `${item.discount}%` : "\u2014"}</Text>
                 <Text style={[s.cellText, { width: COL_W.tax, textAlign: "right" }]}>{item.tax_rate > 0 ? `${item.tax_rate}%` : "\u2014"}</Text>
-                <Text style={[s.cellBold, { width: COL_W.total, textAlign: "right" }]}>{formatCurrency(rowTotal, currency)}</Text>
+                <Text style={[s.cellBold, { width: COL_W.total, textAlign: "right" }]}>{formatCurrency(rowNet, currency)}</Text>
               </View>
             ))
           )}
@@ -262,11 +281,34 @@ export default function InvoicePdfDocument({ invoice, seller, documentTitle, pay
 
         <View style={s.totalsWrap}>
           <View style={s.totalsBox}>
+            {/* The block reads top to bottom as the amount is built: net, what is
+                taken off before VAT, the VAT, then what was already paid — which
+                comes off after the VAT and never changes it. */}
             <View style={s.totalRow}>
-              <Text style={s.totalLabel}>Subtotal</Text>
+              <Text style={s.totalLabel}>Subtotal excl. VAT</Text>
               <Text style={s.totalValue}>{formatCurrency(subtotal, currency)}</Text>
             </View>
-            {totalTax > 0 && (
+            {allowances.map((allowance) => (
+              <View key={allowance.id} style={s.totalRow}>
+                <Text style={s.totalLabel}>Discount{allowance.reason ? ` — ${allowance.reason}` : ""}</Text>
+                <Text style={s.totalValue}>-{formatCurrency(allowance.amount, currency)}</Text>
+              </View>
+            ))}
+            {allowanceTotal > 0 && (
+              <View style={s.totalRow}>
+                <Text style={s.totalLabel}>Total excl. VAT</Text>
+                <Text style={s.totalValue}>{formatCurrency(taxableAmount, currency)}</Text>
+              </View>
+            )}
+            {showVatBreakdown && vatBreakdown.map((line) => (
+              <View key={line.taxRate} style={s.totalRow}>
+                <Text style={s.totalLabel}>
+                  VAT {line.taxRate}% on {formatCurrency(line.taxableAmount, currency)}
+                </Text>
+                <Text style={s.totalValue}>{formatCurrency(line.taxAmount, currency)}</Text>
+              </View>
+            ))}
+            {!showVatBreakdown && totalTax > 0 && (
               <View style={s.totalRow}>
                 <Text style={s.totalLabel}>VAT</Text>
                 <Text style={s.totalValue}>{formatCurrency(totalTax, currency)}</Text>
@@ -278,10 +320,24 @@ export default function InvoicePdfDocument({ invoice, seller, documentTitle, pay
                 <Text style={s.totalValue}>{formatCurrency(accountingTaxAmount, accountingTaxCurrency)}</Text>
               </View>
             )}
+            {prepaidAmount > 0 && (
+              <>
+                <View style={s.totalRow}>
+                  <Text style={s.totalLabel}>Total incl. VAT</Text>
+                  <Text style={s.totalValue}>{formatCurrency(total, currency)}</Text>
+                </View>
+                <View style={s.totalRow}>
+                  <Text style={s.totalLabel}>
+                    Already paid{invoice.prepaid_reference ? ` — ${invoice.prepaid_reference}` : ""}
+                  </Text>
+                  <Text style={s.totalValue}>-{formatCurrency(prepaidAmount, currency)}</Text>
+                </View>
+              </>
+            )}
             <View style={s.totalDivider}>
               <View style={[s.totalRow, { marginBottom: 0 }]}>
-                <Text style={s.totalMainLabel}>Total ({currency})</Text>
-                <Text style={s.totalMainValue}>{formatCurrency(total, currency)}</Text>
+                <Text style={s.totalMainLabel}>{creditNote ? "Total credited" : "Amount due"} ({currency})</Text>
+                <Text style={s.totalMainValue}>{formatCurrency(amountDue, currency)}</Text>
               </View>
             </View>
           </View>
@@ -346,8 +402,8 @@ function TableHeader() {
       <Text style={[s.thText, { width: COL_W.unit, textAlign: "right" }]}>Unit</Text>
       <Text style={[s.thText, { width: COL_W.price, textAlign: "right" }]}>Price</Text>
       <Text style={[s.thText, { width: COL_W.disc, textAlign: "right" }]}>Disc.</Text>
-      <Text style={[s.thText, { width: COL_W.tax, textAlign: "right" }]}>Tax</Text>
-      <Text style={[s.thText, { width: COL_W.total, textAlign: "right" }]}>Total</Text>
+      <Text style={[s.thText, { width: COL_W.tax, textAlign: "right" }]}>VAT</Text>
+      <Text style={[s.thText, { width: COL_W.total, textAlign: "right" }]}>Excl. VAT</Text>
     </View>
   );
 }

@@ -11,8 +11,10 @@ import {
 } from "@rootcx/ui";
 import { IconArrowLeft, IconDeviceFloppy, IconNetwork, IconPrinter, IconTag, IconDotsVertical, IconTrash, IconReceiptRefund } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import type { Invoice, InvoiceStatus, LineItem, PeppolRegistration, PeppolSendLog, PeppolSendState, SellerSettings } from "../types";
-import { computeTotals, FIELD_NONE, getPeppolSendState, isCreditNote, todayISO } from "../types";
+import type { DocumentAllowance, Invoice, InvoiceStatus, LineItem, OutgoingStatus, PeppolRegistration, PeppolSendLog, PeppolSendState, SellerSettings } from "../types";
+import { computeDocumentTotals, FIELD_NONE, getPeppolSendState, isCreditNote, isSuccessfulPeppolSendStatus, todayISO } from "../types";
+import { countComplianceIssues } from "@/lib/invoiceCompliance";
+import { reconcileSendStatuses } from "@/lib/peppolOutgoing";
 import InvoiceDetailsTab from "../components/InvoiceDetailsTab";
 import InvoiceComplianceTab from "../components/InvoiceComplianceTab";
 const InvoicePreview = lazy(() => import("../components/InvoicePreview"));
@@ -61,6 +63,9 @@ function buildPayload(draft: Partial<Invoice>, status: InvoiceStatus, seller?: S
     client_contact_email: draft.client_contact_email ?? "",
     line_items:           draft.line_items ?? [],
     references:           draft.references ?? [],
+    allowances:           draft.allowances ?? [],
+    prepaid_amount:       draft.prepaid_amount ?? 0,
+    prepaid_reference:    draft.prepaid_reference ?? "",
     internal_notes: draft.internal_notes === FIELD_NONE ? FIELD_NONE : (draft.internal_notes || seller?.default_notes || ""),
     terms:          draft.terms         === FIELD_NONE ? FIELD_NONE : (draft.terms         || seller?.default_terms || ""),
     subtotal:  draft.subtotal  ?? 0,
@@ -99,8 +104,21 @@ export default function InvoiceDetailView({ invoiceId, onBack, onDeleted, onOpen
 
   // Prevent edits while Peppol is processing or has accepted the invoice.
   const { data: peppolLogs } = useAppCollection<PeppolSendLog>(APP_ID, "peppol_send_log", { where: { invoice_id: invoiceId } });
-  const peppolSendState = getPeppolSendState((peppolLogs ?? []).map((log) => log.status));
+
+  // The log only records what we attempted; the network reports the outcome later,
+  // in its own collection. Read both, or a failed send stays locked as "sent".
+  const sentUlids = (peppolLogs ?? []).map((log) => log.dokapi_ulid).filter(Boolean);
+  const { data: outgoingEvents } = useAppCollection<OutgoingStatus>("peppol", "outgoing_status", {
+    where: sentUlids.length > 0 ? { document_ulid: { $in: sentUlids } } : { document_ulid: { $eq: "none" } },
+  });
+
+  const effectiveStatuses = reconcileSendStatuses(peppolLogs ?? [], outgoingEvents ?? []);
+  const peppolSendState = getPeppolSendState(effectiveStatuses);
   const isEditable = peppolSendState === "retryable";
+  // A previously successful log now contradicted by the network: say so, instead of
+  // silently reopening the invoice for editing with no explanation.
+  const peppolFailedOnNetwork =
+    isEditable && (peppolLogs ?? []).some((log) => isSuccessfulPeppolSendStatus(log.status));
 
   const [draft, setDraft]               = useState<Partial<Invoice>>({});
   const [saving, setSaving]             = useState(false);
@@ -111,16 +129,30 @@ export default function InvoiceDetailView({ invoiceId, onBack, onDeleted, onOpen
   const [creatingCN, setCreatingCN]     = useState(false);
 
   useEffect(() => {
-    if (invoice) setDraft({ ...invoice, line_items: invoice.line_items ?? [], references: invoice.references ?? [] });
+    if (invoice) setDraft({
+      ...invoice,
+      line_items: invoice.line_items ?? [],
+      references: invoice.references ?? [],
+      allowances: invoice.allowances ?? [],
+    });
   }, [invoice]);
+
+  // Lines, discounts and the paid amount all move the totals, so any of them has
+  // to trigger a recompute — a stale total is what ends up on the PDF and in the UBL.
+  const TOTAL_INPUTS = ["line_items", "allowances", "prepaid_amount"] as const;
 
   const updateDraft = (patch: Partial<Invoice>) =>
     setDraft((prev) => {
-      if ("line_items" in patch) {
-        const { subtotal, totalTax, total } = computeTotals((patch.line_items ?? []) as LineItem[]);
-        return { ...prev, ...patch, subtotal, total_tax: totalTax, total };
+      const next = { ...prev, ...patch };
+      if (TOTAL_INPUTS.some((key) => key in patch)) {
+        const { subtotal, totalTax, total } = computeDocumentTotals(
+          (next.line_items ?? []) as LineItem[],
+          (next.allowances ?? []) as DocumentAllowance[],
+          next.prepaid_amount ?? 0,
+        );
+        return { ...next, subtotal, total_tax: totalTax, total };
       }
-      return { ...prev, ...patch };
+      return next;
     });
 
   const handleSave = async () => {
@@ -176,9 +208,14 @@ export default function InvoiceDetailView({ invoiceId, onBack, onDeleted, onOpen
         client_country: invoice.client_country ?? "",
         client_contact_name: invoice.client_contact_name ?? "",
         client_contact_email: invoice.client_contact_email ?? "",
-        // Full copy of the original lines/refs — the user trims for partial credits.
+        // Full copy of the original lines/refs/discounts — the user trims for
+        // partial credits. The paid amount is deliberately not copied: what the
+        // customer paid on the invoice is not something the credit note restates.
         line_items: invoice.line_items ?? [],
         references: invoice.references ?? [],
+        allowances: invoice.allowances ?? [],
+        prepaid_amount: 0,
+        prepaid_reference: "",
         internal_notes: "",
         terms: "",
         subtotal: invoice.subtotal ?? 0,
@@ -226,10 +263,9 @@ export default function InvoiceDetailView({ invoiceId, onBack, onDeleted, onOpen
   const canCreateCreditNote   = !creditNote && !isEditable;
   const createCnDisabledReason = !creditNote && isEditable ? "Send the invoice via Peppol first" : null;
 
-  const totalIssues =
-    [draft.client_company, draft.client_vat, draft.client_street, draft.client_city, draft.client_postal]
-      .filter((v) => !v).length +
-    ((draft.line_items ?? []).length === 0 ? 1 : 0);
+  // Same source of truth as the Compliance tab, so the badge count and the reason
+  // the Send button is disabled can never disagree.
+  const totalIssues = countComplianceIssues(draft);
 
   const showPeppol = isEditable && peppolActive && totalIssues === 0;
   const peppolDisabledReason = getPeppolDisabledReason(peppolSendState, peppolActive, totalIssues);
@@ -255,6 +291,18 @@ export default function InvoiceDetailView({ invoiceId, onBack, onDeleted, onOpen
                 <Badge variant="outline" className="text-[10px] border-purple-200 bg-purple-50 text-purple-700">
                   Credit Note
                 </Badge>
+              )}
+              {peppolFailedOnNetwork && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="outline" className="text-[10px] border-red-200 bg-red-50 text-red-700">
+                      Peppol send failed
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    The network never delivered it. Editable again — fix and resend.
+                  </TooltipContent>
+                </Tooltip>
               )}
             </div>
           </div>

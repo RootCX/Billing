@@ -1,7 +1,6 @@
-export type { InvoiceStatus, VatTreatment, DocumentType, LineItem, InvoiceReference, Invoice, SellerSettings } from "@shared/invoice-types";
-export { FIELD_NONE, VAT_TREATMENT_LABELS, STATUS_STYLES, computeLineItem, formatCurrency, formatDate, invoicePdfFilename, isCreditNote, documentTitleFor } from "@shared/invoice-types";
-import type { Invoice, LineItem } from "@shared/invoice-types";
-import { computeLineItem } from "@shared/invoice-types";
+export type { InvoiceStatus, VatTreatment, DocumentType, LineItem, InvoiceReference, DocumentAllowance, DocumentTotals, VatBreakdownLine, Invoice, SellerSettings } from "@shared/invoice-types";
+export { FIELD_NONE, VAT_TREATMENT_LABELS, STATUS_STYLES, computeLineItem, computeDocumentTotals, computeVatBreakdown, formatCurrency, formatDate, invoicePdfFilename, isCreditNote, documentTitleFor } from "@shared/invoice-types";
+import type { Invoice } from "@shared/invoice-types";
 
 export type ReferenceType = "purchase_order" | "contract_number" | "cost_center" | "project_reference" | "custom";
 export type PeppolRegStatus = "not_registered" | "pending" | "active" | "failed";
@@ -155,18 +154,6 @@ export const CONTACT_FORM_FIELDS = [
 
 export function contactDisplayName(c: Contact): string {
   return `${c.first_name} ${c.last_name ?? ""}`.trim();
-}
-
-export function computeTotals(items: LineItem[]) {
-  const round2 = (v: number) => Math.round(v * 100) / 100;
-  let subtotal = 0;
-  let totalTax = 0;
-  for (const item of items) {
-    const { subtotal: s, tax: t } = computeLineItem(item);
-    subtotal = round2(subtotal + s);
-    totalTax = round2(totalTax + t);
-  }
-  return { subtotal, totalTax, total: round2(subtotal + totalTax) };
 }
 
 export const REFERENCE_TYPE_LABELS: Record<ReferenceType, string> = {

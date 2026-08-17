@@ -1,7 +1,7 @@
 {
   "appId": "billing",
   "name": "Billing",
-  "version": "0.10.6",
+  "version": "0.11.0",
   "icon": "assets/icon.png",
   "description": "Professional invoicing and billing management",
   "dataContract": [
@@ -48,6 +48,9 @@
         { "name": "client_contact_email", "type": "text" },
         { "name": "line_items", "type": "json" },
         { "name": "references", "type": "json" },
+        { "name": "allowances", "type": "json" },
+        { "name": "prepaid_amount", "type": "number" },
+        { "name": "prepaid_reference", "type": "text" },
         { "name": "internal_notes", "type": "text" },
         { "name": "terms", "type": "text" },
         { "name": "subtotal", "type": "number" },

@@ -1,4 +1,4 @@
-import type { Invoice, LineItem, SellerSettings } from "./invoice-types";
+import type { DocumentAllowance, Invoice, LineItem, SellerSettings } from "./invoice-types";
 
 export interface ParsedUblAddress {
   street?: string;
@@ -39,6 +39,13 @@ export interface ParsedUbl {
     payableAmount?: number;
     prepaidAmount?: number;
   };
+  /** BG-20 / BG-21 — `chargeIndicator` false is a discount, true is a charge. */
+  allowanceCharges?: {
+    chargeIndicator?: boolean;
+    amount?: number;
+    reason?: string;
+    taxPercent?: number;
+  }[];
   taxTotal?: {
     taxAmount?: number;
     subtotals?: { percent?: number }[];
@@ -75,6 +82,17 @@ export function ublToIncomingPdfData(
     tax_rate: taxRate,
   }));
 
+  // A supplier's document level discount and deposit belong on the rendered PDF —
+  // without them the totals box shows a total that does not follow from its own rows.
+  const allowances: DocumentAllowance[] = (ubl.allowanceCharges ?? [])
+    .filter((ac) => ac.chargeIndicator === false)
+    .map((ac, i) => ({
+      id: `allowance-${i}`,
+      amount: ac.amount ?? 0,
+      tax_rate: ac.taxPercent ?? 0,
+      reason: ac.reason ?? "",
+    }));
+
   const references = [
     ubl.despatchDocumentReference ? { id: "desp", type: "custom" as const, label: "Despatch #", value: ubl.despatchDocumentReference } : null,
     ubl.buyerReference ? { id: "bref", type: "custom" as const, label: "Buyer Ref", value: ubl.buyerReference } : null,
@@ -100,6 +118,8 @@ export function ublToIncomingPdfData(
     references,
     internal_notes: "",
     terms: "",
+    allowances,
+    prepaid_amount: ubl.monetaryTotal?.prepaidAmount ?? 0,
     subtotal: ubl.monetaryTotal?.lineExtensionAmount ?? 0,
     total_tax: ubl.taxTotal?.taxAmount ?? 0,
     total: ubl.monetaryTotal?.taxInclusiveAmount ?? ubl.monetaryTotal?.payableAmount ?? doc.amount ?? 0,

@@ -12,7 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import { cleanVat, deriveReceiverPeppolId } from "@/lib/vat";
 import type { Invoice, PeppolRegistration, PeppolSendLog, SellerSettings, LineItem, InvoiceReference } from "../types";
-import { formatCurrency, isCreditNote } from "../types";
+import { computeLineItem, formatCurrency, isCreditNote } from "../types";
 
 const APP_ID = "billing";
 
@@ -23,12 +23,13 @@ interface Props {
   onSent: () => void;
 }
 
-type Step = "confirm" | "sending" | "success" | "error";
+type Step = "confirm" | "validating" | "sending" | "success" | "error" | "invalid";
 
 export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }: Props) {
   const [step, setStep] = useState<Step>("confirm");
   const [dokapiUlid, setDokapiUlid] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [ublXml, setUblXml] = useState("");
   const [showXml, setShowXml] = useState(false);
 
@@ -53,14 +54,19 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
     needsAccountingTaxCurrency
     && (!taxCurrency || Number(invoice.tax_amount_in_tax_currency ?? 0) === 0);
 
+  const allowances = invoice.allowances ?? [];
+  const prepaidAmount = Number(invoice.prepaid_amount ?? 0);
+  const amountDue = Math.round(((invoice.total ?? 0) - prepaidAmount) * 100) / 100;
+
   const senderPeppolId = reg?.peppol_id ?? "";
   const receiverPeppolId = invoice.client_vat
     ? deriveReceiverPeppolId(invoice.client_vat, invoice.client_country ?? "BE")
     : "";
 
   const handleSend = async () => {
-    setStep("sending");
+    setStep("validating");
     setErrorMsg("");
+    setValidationErrors([]);
 
     try {
       const lines = (invoice.line_items ?? []).map((item: LineItem, idx: number) => ({
@@ -69,7 +75,16 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
         quantity: item.quantity,
         unitPrice: item.unit_price,
         taxPercent: item.tax_rate ?? 0,
-        lineAmount: item.quantity * item.unit_price * (1 - (item.discount ?? 0) / 100),
+        // The same rounded net amount the invoice and the PDF show: the VAT
+        // breakdown is built on the sum of these, so an unrounded value here
+        // would put the document a cent away from itself (EN16931 BR-CO-10).
+        lineAmount: computeLineItem(item).subtotal,
+      }));
+
+      const ublAllowances = allowances.map((allowance) => ({
+        amount: Number(allowance.amount) || 0,
+        taxPercent: Number(allowance.tax_rate) || 0,
+        reason: allowance.reason,
       }));
 
       const refs = (invoice.references ?? []) as InvoiceReference[];
@@ -109,6 +124,10 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
         taxTotal: invoice.total_tax ?? 0,
         taxableAmount: invoice.subtotal ?? 0,
         payableAmount: invoice.total ?? 0,
+        // A deposit or a rebate travels as BG-20 / BT-113, never as a negative
+        // line: EN16931 BR-27 forbids a negative item net price.
+        ...(ublAllowances.length > 0 ? { allowances: ublAllowances } : {}),
+        ...(prepaidAmount > 0 ? { prepaidAmount } : {}),
         ...(seller?.iban ? { paymentInfo: { iban: seller.iban, bic: seller.bic ?? "" } } : {}),
         ...(poRef ? { orderReference: poRef } : {}),
         ...(contractRef ? { contractReference: contractRef } : {}),
@@ -141,15 +160,31 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
       const sendAction = creditNote ? "send_credit_note" : "send_invoice";
 
       // Generate the UBL once (for storage/preview) and reuse it for the send so
-      // the worker doesn't regenerate it; if generation fails the worker rebuilds
-      // it from the params.
-      let xml = "";
-      try {
-        const ublRes = await call(genAction, { [paramKey]: docParams }) as { xml: string };
-        xml = ublRes.xml ?? "";
-        setUblXml(xml);
-      } catch { /* non-blocking */ }
+      // the worker doesn't regenerate it. A generation failure is fatal on purpose:
+      // the generator enforces the EN16931 rules the network would reject anyway,
+      // and it says which rule and what to do instead.
+      const ublRes = await call(genAction, { [paramKey]: docParams }) as { xml: string };
+      const xml = ublRes.xml ?? "";
+      setUblXml(xml);
 
+      // Ask the network's own validator before sending. Without this the document
+      // leaves, fails a Schematron rule somewhere in the network, and comes back as
+      // a "sending_failed" log the user cannot act on.
+      const validation = await call("validate_document", { xml }) as { valid: boolean; errors: string[] };
+      if (!validation.valid) {
+        const errors = validation.errors ?? [];
+        // The action reports an unreachable validator the same way as an invalid
+        // document. Not being able to check is no reason to block a valid send —
+        // Dokapi validates again on receipt.
+        const validatorDown = errors.length === 1 && /validation service unavailable/i.test(errors[0]);
+        if (!validatorDown) {
+          setValidationErrors(errors.length > 0 ? errors : ["The Peppol validator refused the document."]);
+          setStep("invalid");
+          return;
+        }
+      }
+
+      setStep("sending");
       const result = await call(sendAction, {
         senderPeppolId,
         receiverPeppolId,
@@ -205,6 +240,7 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
     setStep("confirm");
     setDokapiUlid("");
     setErrorMsg("");
+    setValidationErrors([]);
     setUblXml("");
     setShowXml(false);
     onOpenChange(false);
@@ -244,6 +280,31 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
                   <span className="text-muted-foreground">Amount</span>
                   <span className="font-semibold">{formatCurrency(invoice.total ?? 0, invoice.currency ?? "EUR")}</span>
                 </div>
+                {allowances.length > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">
+                      {allowances.length === 1 ? "Discount" : `${allowances.length} discounts`}
+                    </span>
+                    <span>
+                      −{formatCurrency(
+                        allowances.reduce((sum, a) => sum + (Number(a.amount) || 0), 0),
+                        invoice.currency ?? "EUR",
+                      )} excl. VAT
+                    </span>
+                  </div>
+                )}
+                {prepaidAmount > 0 && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Already paid</span>
+                      <span>−{formatCurrency(prepaidAmount, invoice.currency ?? "EUR")}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Amount due</span>
+                      <span className="font-semibold">{formatCurrency(amountDue, invoice.currency ?? "EUR")}</span>
+                    </div>
+                  </>
+                )}
               </div>
 
               <Separator />
@@ -295,15 +356,48 @@ export default function PeppolSendDialog({ open, onOpenChange, invoice, onSent }
           </>
         )}
 
-        {/* SENDING */}
-        {step === "sending" && (
+        {/* VALIDATING / SENDING */}
+        {(step === "validating" || step === "sending") && (
           <div className="flex flex-col items-center gap-4 py-8">
             <IconLoader2 className="h-10 w-10 text-primary animate-spin" />
             <div className="text-center space-y-1">
-              <p className="font-semibold">Sending…</p>
-              <p className="text-sm text-muted-foreground">Submitting to the Peppol network</p>
+              <p className="font-semibold">{step === "validating" ? "Checking…" : "Sending…"}</p>
+              <p className="text-sm text-muted-foreground">
+                {step === "validating"
+                  ? "Running the Peppol checks before anything leaves"
+                  : "Submitting to the Peppol network"}
+              </p>
             </div>
           </div>
+        )}
+
+        {/* INVALID — refused by the checks, nothing was sent */}
+        {step === "invalid" && (
+          <>
+            <div className="space-y-3 py-2">
+              <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <IconAlertCircle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                <div>
+                  <p className="font-semibold">Not sent — the Peppol checks refused it</p>
+                  <p className="text-xs mt-0.5 opacity-90">
+                    Nothing left your system. Fix the points below and try again.
+                  </p>
+                </div>
+              </div>
+              <ul className="space-y-1.5 max-h-56 overflow-y-auto">
+                {validationErrors.map((error, idx) => (
+                  <li key={idx} className="text-xs leading-relaxed rounded border bg-muted/30 px-2.5 py-1.5">
+                    {error}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={handleClose}>Close</Button>
+              <Button onClick={() => { setStep("confirm"); setValidationErrors([]); }}>Back</Button>
+            </DialogFooter>
+          </>
         )}
 
         {/* SUCCESS */}
